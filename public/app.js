@@ -1,4 +1,5 @@
 import { buildCsv, chooseCandidate, isValidSerial, normalizeSerial } from './serial.js';
+import { snapshotSelectedImages } from './photo-files.js';
 
 const DEFAULT_CROP = { top: 0.78, height: 0.17, width: 0.74 };
 const state = { items: [], workerPromise: null, queue: Promise.resolve(), activeCropId: null };
@@ -259,7 +260,7 @@ async function processItem(item) {
 }
 
 async function addFiles(fileList) {
-  const files = [...fileList].filter((file) => file.type.startsWith('image/'));
+  const files = snapshotSelectedImages(fileList);
   if (!files.length) return;
   const newItems = files.map((file) => ({
     id: crypto.randomUUID(),
@@ -368,7 +369,7 @@ function updateConnectionStatus() {
 }
 
 dom.photoInput.addEventListener('change', (event) => {
-  const files = [...event.target.files];
+  const files = snapshotSelectedImages(event.target.files);
   state.queue = state.queue.then(() => addFiles(files));
   event.target.value = '';
 });

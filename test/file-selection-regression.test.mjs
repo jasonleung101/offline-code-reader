@@ -1,8 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { snapshotSelectedImages } from '../public/photo-files.js';
 
-test('snapshots the selected FileList before clearing the file input', async () => {
-  const source = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
-  assert.match(source, /const files = \[\.\.\.event\.target\.files\];/);
+test('retains selected images after the browser clears its live FileList', () => {
+  const photo = { name: 'photo.jpg', type: 'image/jpeg' };
+  const document = { name: 'note.txt', type: 'text/plain' };
+  let currentFiles = [photo, document];
+  const liveFileList = { [Symbol.iterator]: () => currentFiles.values() };
+
+  const selectedFiles = snapshotSelectedImages(liveFileList);
+  currentFiles = [];
+
+  assert.deepEqual(selectedFiles, [photo]);
 });
