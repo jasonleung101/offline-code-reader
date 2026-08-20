@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildCsv, chooseCandidate, isValidSerial, normalizeSerial } from '../public/serial.js';
+import { buildCsv, canConfirmSerial, chooseCandidate, isValidSerial, normalizeSerial } from '../public/serial.js';
 
 test('normalizes OCR whitespace and punctuation without altering valid characters', () => {
   assert.equal(normalizeSerial(' F4MU6R\nD6P6V7NMK2 '), 'F4MU6RD6P6V7NMK2');
@@ -38,4 +38,10 @@ test('never trusts partial agreement or an invalid result', () => {
 
 test('exports a safe, quoted CSV', () => {
   assert.equal(buildCsv([{ file: { name: 'photo, one.jpg' }, code: 'F4MU6RD6P6V7NMK2', status: 'ready', confidence: 89 }]), '"filename","serial_code","status","ocr_confidence"\r\n"photo, one.jpg","F4MU6RD6P6V7NMK2","ready","89"');
+});
+
+test('allows an explicit review only for a valid code that still needs review', () => {
+  assert.equal(canConfirmSerial({ code: 'F4MU6RD6P6V7NMK2', status: 'review' }), true);
+  assert.equal(canConfirmSerial({ code: 'F4MU6RD6P6V7NMK', status: 'review' }), false);
+  assert.equal(canConfirmSerial({ code: 'F4MU6RD6P6V7NMK2', status: 'ready' }), false);
 });

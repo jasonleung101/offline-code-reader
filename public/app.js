@@ -1,4 +1,4 @@
-import { buildCsv, chooseCandidate, isValidSerial, normalizeSerial } from './serial.js';
+import { buildCsv, canConfirmSerial, chooseCandidate, isValidSerial, normalizeSerial } from './serial.js';
 import { snapshotSelectedImages } from './photo-files.js';
 
 const DEFAULT_CROP = { top: 0.78, height: 0.17, width: 0.74 };
@@ -134,6 +134,18 @@ function renderItem(item) {
   retry.textContent = 'Adjust crop & retry';
   retry.addEventListener('click', () => openCropDialog(item));
   actions.append(retry);
+
+  if (canConfirmSerial(item)) {
+    const confirm = document.createElement('button');
+    confirm.type = 'button';
+    confirm.className = 'primary-button';
+    confirm.textContent = 'Confirm code';
+    confirm.addEventListener('click', () => {
+      item.status = 'verified';
+      render();
+    });
+    actions.append(confirm);
+  }
 
   main.append(top, input, detail, actions);
   row.append(main);

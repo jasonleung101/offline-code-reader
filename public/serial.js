@@ -10,6 +10,10 @@ export function isValidSerial(value) {
   return SERIAL_PATTERN.test(value);
 }
 
+export function canConfirmSerial(item) {
+  return item.status === 'review' && isValidSerial(item.code);
+}
+
 export function chooseCandidate(reads) {
   const validReads = reads
     .map((read) => ({ ...read, code: normalizeSerial(read.text) }))
