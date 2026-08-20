@@ -368,7 +368,7 @@ function updateConnectionStatus() {
 }
 
 dom.photoInput.addEventListener('change', (event) => {
-  const files = event.target.files;
+  const files = [...event.target.files];
   state.queue = state.queue.then(() => addFiles(files));
   event.target.value = '';
 });
