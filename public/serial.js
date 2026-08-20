@@ -14,6 +14,10 @@ export function canConfirmSerial(item) {
   return item.status === 'review' && isValidSerial(item.code);
 }
 
+export function canCopySerial(item) {
+  return isValidSerial(item.code) && ['ready', 'verified'].includes(item.status);
+}
+
 export function chooseCandidate(reads) {
   const validReads = reads
     .map((read) => ({ ...read, code: normalizeSerial(read.text) }))

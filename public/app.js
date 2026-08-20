@@ -1,4 +1,4 @@
-import { buildCsv, canConfirmSerial, chooseCandidate, isValidSerial, normalizeSerial } from './serial.js';
+import { buildCsv, canConfirmSerial, canCopySerial, chooseCandidate, isValidSerial, normalizeSerial } from './serial.js';
 import { snapshotSelectedImages } from './photo-files.js';
 
 const DEFAULT_CROP = { top: 0.78, height: 0.17, width: 0.74 };
@@ -145,6 +145,15 @@ function renderItem(item) {
       render();
     });
     actions.append(confirm);
+  }
+
+  if (canCopySerial(item)) {
+    const copy = document.createElement('button');
+    copy.type = 'button';
+    copy.className = 'secondary-button';
+    copy.textContent = 'Copy code';
+    copy.addEventListener('click', () => copyText(item.code, copy, 'Copy code'));
+    actions.append(copy);
   }
 
   main.append(top, input, detail, actions);
@@ -369,15 +378,18 @@ function downloadCsv() {
   URL.revokeObjectURL(url);
 }
 
-async function copyCodes() {
-  const codes = readyItems().map((item) => item.code).join('\n');
+async function copyText(text, button, defaultLabel) {
   try {
-    await navigator.clipboard.writeText(codes);
-    dom.copy.textContent = 'Copied';
-    setTimeout(() => { dom.copy.textContent = 'Copy codes'; }, 1800);
+    await navigator.clipboard.writeText(text);
+    button.textContent = 'Copied';
+    setTimeout(() => { button.textContent = defaultLabel; }, 1800);
   } catch {
-    window.prompt('Copy these codes:', codes);
+    window.prompt('Copy this code:', text);
   }
+}
+
+function copyCodes() {
+  return copyText(readyItems().map((item) => item.code).join('\n'), dom.copy, 'Copy codes');
 }
 
 function clearBatch() {

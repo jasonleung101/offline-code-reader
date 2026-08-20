@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildCsv, canConfirmSerial, chooseCandidate, isValidSerial, normalizeSerial } from '../public/serial.js';
+import { buildCsv, canConfirmSerial, canCopySerial, chooseCandidate, isValidSerial, normalizeSerial } from '../public/serial.js';
 
 test('normalizes OCR whitespace and punctuation without altering valid characters', () => {
   assert.equal(normalizeSerial(' F4MU6R\nD6P6V7NMK2 '), 'F4MU6RD6P6V7NMK2');
@@ -44,4 +44,11 @@ test('allows an explicit review only for a valid code that still needs review', 
   assert.equal(canConfirmSerial({ code: 'F4MU6RD6P6V7NMK2', status: 'review' }), true);
   assert.equal(canConfirmSerial({ code: 'F4MU6RD6P6V7NMK', status: 'review' }), false);
   assert.equal(canConfirmSerial({ code: 'F4MU6RD6P6V7NMK2', status: 'ready' }), false);
+});
+
+test('allows per-item copying only for ready or verified serials', () => {
+  assert.equal(canCopySerial({ code: 'F4MU6RD6P6V7NMK2', status: 'ready' }), true);
+  assert.equal(canCopySerial({ code: 'F4MU6RD6P6V7NMK2', status: 'verified' }), true);
+  assert.equal(canCopySerial({ code: 'F4MU6RD6P6V7NMK2', status: 'review' }), false);
+  assert.equal(canCopySerial({ code: 'F4MU6RD6P6V7NMK', status: 'verified' }), false);
 });
