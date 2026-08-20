@@ -2,6 +2,7 @@ import { buildCsv, chooseCandidate, isValidSerial, normalizeSerial } from './ser
 import { snapshotSelectedImages } from './photo-files.js';
 
 const DEFAULT_CROP = { top: 0.78, height: 0.17, width: 0.74 };
+const OCR_START_TIMEOUT_MS = 30000;
 const state = { items: [], workerPromise: null, queue: Promise.resolve(), activeCropId: null };
 
 const dom = {
@@ -205,13 +206,22 @@ function buildVariants(source) {
   return [source, grayscale, thresholded];
 }
 
+function withTimeout(promise, timeoutMs, message) {
+  let timeoutId;
+  const timeout = new Promise((_, reject) => {
+    timeoutId = window.setTimeout(() => reject(new Error(message)), timeoutMs);
+  });
+  return Promise.race([promise, timeout]).finally(() => window.clearTimeout(timeoutId));
+}
+
 async function getWorker() {
   if (!state.workerPromise) {
-    state.workerPromise = window.Tesseract.createWorker('eng', 1, {
+    const workerStartup = window.Tesseract.createWorker('eng', 1, {
       workerPath: './vendor/tesseract/worker.min.js',
       corePath: './vendor/tesseract-core',
       langPath: './vendor/lang-data',
       cacheMethod: 'none',
+      workerBlobURL: false,
       logger: ({ status, progress }) => {
         const percent = Math.round((progress || 0) * 100);
         setProgress(status === 'recognizing text' ? 'Reading serial code locally…' : 'Loading offline OCR…', percent);
@@ -224,7 +234,12 @@ async function getWorker() {
         tessedit_pageseg_mode: '7',
       });
       return worker;
-    }).catch((error) => {
+    });
+    state.workerPromise = withTimeout(
+      workerStartup,
+      OCR_START_TIMEOUT_MS,
+      `OCR startup timed out after ${Math.round(OCR_START_TIMEOUT_MS / 1000)} seconds. Reload the app and try again.`,
+    ).catch((error) => {
       state.workerPromise = null;
       throw new Error(`Offline OCR could not start: ${error.message || error}`);
     });
