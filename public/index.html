@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#172033">
+    <meta name="description" content="Read fixed-format serial codes from photos without uploading them.">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self'; img-src 'self' blob: data:; script-src 'self'; style-src 'self'; worker-src 'self' blob:; manifest-src 'self'; base-uri 'none'; form-action 'none'">
+    <link rel="manifest" href="./manifest.webmanifest">
+    <link rel="icon" href="./icon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="./styles.css">
+    <title>Offline Code Reader</title>
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="masthead">
+        <div>
+          <p class="eyebrow">PRIVATE, ON-DEVICE OCR</p>
+          <h1>Offline Code Reader</h1>
+          <p class="lede">Read 16-character printed serials from your photos. Nothing is uploaded.</p>
+        </div>
+        <output id="connection-status" class="privacy-chip" aria-live="polite">Checking offline cache…</output>
+      </header>
+
+      <section class="upload-card" aria-labelledby="add-photos-title">
+        <div>
+          <h2 id="add-photos-title">Add code photos</h2>
+          <p>Use clear, straight photos of the printed serial-number panel. QR codes are ignored.</p>
+        </div>
+        <label class="primary-button" for="photo-input">
+          <span>Select photos</span>
+          <input id="photo-input" type="file" accept="image/*" multiple>
+        </label>
+        <p class="hint">The first run downloads the OCR files once. Later use works offline.</p>
+      </section>
+
+      <section id="progress-section" class="progress-section" hidden aria-live="polite">
+        <div class="progress-label"><span id="progress-text">Preparing OCR…</span><span id="progress-count"></span></div>
+        <div class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <div id="progress-bar" class="progress-bar"></div>
+        </div>
+      </section>
+
+      <section class="results-section" aria-labelledby="results-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">BATCH RESULTS</p>
+            <h2 id="results-title">No photos yet</h2>
+          </div>
+          <div class="action-row">
+            <button id="copy-button" class="secondary-button" type="button" disabled>Copy codes</button>
+            <button id="export-button" class="secondary-button" type="button" disabled>Export CSV</button>
+            <button id="clear-button" class="text-button" type="button" disabled>Clear batch</button>
+          </div>
+        </div>
+        <p id="empty-state" class="empty-state">Each image remains on this device. Results that are not safely verified will ask for your review.</p>
+        <ol id="results-list" class="results-list" aria-live="polite"></ol>
+      </section>
+    </main>
+
+    <dialog id="crop-dialog" class="crop-dialog" aria-labelledby="crop-title">
+      <form method="dialog" class="dialog-card">
+        <div class="dialog-heading">
+          <div>
+            <p class="eyebrow">RETRY WITH A NEW CROP</p>
+            <h2 id="crop-title">Adjust the serial panel</h2>
+          </div>
+          <button class="icon-button" value="cancel" aria-label="Close crop settings">×</button>
+        </div>
+        <canvas id="crop-preview" aria-label="Preview of the crop area"></canvas>
+        <label>Panel top <output id="crop-top-output">78%</output><input id="crop-top" type="range" min="55" max="88" value="78"></label>
+        <label>Panel height <output id="crop-height-output">17%</output><input id="crop-height" type="range" min="8" max="30" value="17"></label>
+        <label>Code width <output id="crop-width-output">74%</output><input id="crop-width" type="range" min="45" max="96" value="74"></label>
+        <button id="crop-run-button" class="primary-button" value="default" type="button">Retry recognition</button>
+      </form>
+    </dialog>
+
+    <script src="./vendor/tesseract/tesseract.min.js"></script>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,10 @@
+{
+  "name": "Offline Code Reader",
+  "short_name": "Code Reader",
+  "description": "On-device serial-code reader with no uploads.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f7f8fb",
+  "theme_color": "#172033",
+  "icons": [{ "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}
