@@ -1,10 +1,11 @@
 import { buildCsv, canConfirmSerial, canCopySerial, chooseCandidates, isValidSerial, normalizeSerial } from './serial.js';
 import { snapshotSelectedImages } from './photo-files.js';
-import { ORIENTATIONS, chooseUniqueCandidates, locatorCrops } from './recognition.js';
+import { ORIENTATIONS, applyGlyphResolutions, chooseUniqueCandidates, hasExactLocatorSerial, locatorCrops } from './recognition.js';
 
-export const APP_VERSION = '0.3.0';
+export const APP_VERSION = '0.3.1';
 
 const OCR_START_TIMEOUT_MS = 30000;
+const SERIAL_WHITELIST = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 const state = { items: [], workerPromise: null, queue: Promise.resolve() };
 
 const dom = {
@@ -56,6 +57,7 @@ function entryLabel(entry) {
   const agreement = entry.agreement === entry.passes ? `all ${entry.passes}` : `${entry.agreement}/${entry.passes}`;
   if (entry.status === 'ready') return `Confirmed by ${agreement} full-scan passes · average confidence ${entry.confidence}%`;
   if (entry.status === 'verified') return 'Confirmed by you';
+  if (entry.ambiguityNeedsReview) return 'Could not distinguish a rounded 2 from a sharp Z. Please check the high-resolution crop.';
   if (entry.code) return `Found in ${agreement} pass${entry.passes === 1 ? '' : 'es'} (${entry.confidence}% confidence). Please check it.`;
   return 'Enter the printed code.';
 }
@@ -312,7 +314,7 @@ async function getWorker() {
       },
     }).then(async (worker) => {
       await worker.setParameters({
-        tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
+        tessedit_char_whitelist: SERIAL_WHITELIST,
         preserve_interword_spaces: '0',
         user_defined_dpi: '300',
         tessedit_pageseg_mode: '11',
@@ -332,16 +334,54 @@ async function getWorker() {
 }
 
 async function scanPass(worker, canvas) {
-  await worker.setParameters({ tessedit_pageseg_mode: '11' });
+  await worker.setParameters({ tessedit_char_whitelist: SERIAL_WHITELIST, tessedit_pageseg_mode: '11' });
   const result = await worker.recognize(canvas, {}, { text: true, blocks: true });
   return result.data.lines ?? [];
 }
 
 async function scanSerialCrop(worker, canvas) {
-  await worker.setParameters({ tessedit_pageseg_mode: '7' });
+  await worker.setParameters({ tessedit_char_whitelist: SERIAL_WHITELIST, tessedit_pageseg_mode: '7' });
   const result = await worker.recognize(canvas, {}, { text: true });
   const code = normalizeSerial(result.data.text);
   return isValidSerial(code) ? [{ text: code, confidence: Math.round(result.data.confidence) }] : [];
+}
+
+function glyphCrop(source, glyph) {
+  const glyphWidth = glyph.bbox.x1 - glyph.bbox.x0;
+  const glyphHeight = glyph.bbox.y1 - glyph.bbox.y0;
+  const padding = Math.max(16, Math.round(Math.max(glyphWidth, glyphHeight) * 0.8));
+  const x = Math.max(0, Math.floor(glyph.bbox.x0 - padding));
+  const y = Math.max(0, Math.floor(glyph.bbox.y0 - padding));
+  const x1 = Math.min(source.width, Math.ceil(glyph.bbox.x1 + padding));
+  const y1 = Math.min(source.height, Math.ceil(glyph.bbox.y1 + padding));
+  return { x, y, width: x1 - x, height: y1 - y };
+}
+
+async function scan2ZGlyph(worker, canvas) {
+  await worker.setParameters({ tessedit_char_whitelist: '2Z', tessedit_pageseg_mode: '10' });
+  const result = await worker.recognize(canvas, {}, { text: true });
+  const value = normalizeSerial(result.data.text);
+  return value === '2' || value === 'Z' ? value : '';
+}
+
+async function resolveAmbiguousGlyphs(worker, source, glyphs) {
+  const resolutions = [];
+  for (const glyph of glyphs) {
+    const glyphCanvas = cropCanvas(source, glyphCrop(source, glyph));
+    const variants = buildVariants(glyphCanvas);
+    const reads = [];
+    for (const variant of variants) {
+      const value = await scan2ZGlyph(worker, variant);
+      if (value) reads.push(value);
+    }
+    const value = reads.length === variants.length && new Set(reads).size === 1 ? reads[0] : '';
+    resolutions.push({ index: glyph.index, value });
+    for (const variant of variants) {
+      variant.width = 1;
+      variant.height = 1;
+    }
+  }
+  return resolutions;
 }
 
 function canvasObjectUrl(canvas) {
@@ -372,22 +412,42 @@ async function processItem(item) {
       setProgress(`Locating serial lines in photo ${batchIndex} of ${state.items.length}`, (orientationIndex / ORIENTATIONS.length) * 100, `${rotation}° orientation`);
       const oriented = drawOriented(image, rotation);
       const crops = locatorCrops(await scanPass(worker, oriented), oriented.width, oriented.height);
+      if (!hasExactLocatorSerial(crops)) {
+        oriented.width = 1;
+        oriented.height = 1;
+        continue;
+      }
       for (let cropIndex = 0; cropIndex < crops.length; cropIndex += 1) {
-        const crop = cropCanvas(oriented, crops[cropIndex]);
+        const definition = crops[cropIndex];
+        const glyphResolutions = isValidSerial(definition.locatorText)
+          ? await resolveAmbiguousGlyphs(worker, oriented, definition.ambiguousGlyphs)
+          : [];
+        const ambiguityNeedsReview = glyphResolutions.some((resolution) => !resolution.value);
+        const crop = cropCanvas(oriented, definition);
         const variants = buildVariants(crop);
         const passes = [];
         for (let variantIndex = 0; variantIndex < variants.length; variantIndex += 1) {
           setProgress(`Confirming serial lines in photo ${batchIndex} of ${state.items.length}`, ((orientationIndex + ((cropIndex + (variantIndex / variants.length)) / Math.max(crops.length, 1))) / ORIENTATIONS.length) * 100, `${rotation}° · candidate ${cropIndex + 1}/${crops.length}`);
           passes.push(await scanSerialCrop(worker, variants[variantIndex]));
         }
-        const cropCandidates = chooseCandidates(passes);
-        if (isValidSerial(crops[cropIndex].locatorText)) {
+        const resolvedPasses = passes.map((pass) => pass.map((read) => ({
+          ...read,
+          text: applyGlyphResolutions(read.text, glyphResolutions),
+        })));
+        const cropCandidates = chooseCandidates(resolvedPasses).map((candidate) => ({
+          ...candidate,
+          trusted: candidate.trusted && !ambiguityNeedsReview,
+          ambiguityNeedsReview,
+        }));
+        const resolvedLocatorText = applyGlyphResolutions(definition.locatorText, glyphResolutions);
+        if (isValidSerial(resolvedLocatorText)) {
           cropCandidates.push({
-            code: crops[cropIndex].locatorText,
-            confidence: crops[cropIndex].locatorConfidence,
+            code: resolvedLocatorText,
+            confidence: definition.locatorConfidence,
             agreement: 1,
             passes: variants.length,
             trusted: false,
+            ambiguityNeedsReview,
           });
         }
         for (const candidate of cropCandidates) {
@@ -401,6 +461,7 @@ async function processItem(item) {
       }
       oriented.width = 1;
       oriented.height = 1;
+      break;
     }
     const uniqueCandidates = chooseUniqueCandidates(candidates);
     const selected = new Set(uniqueCandidates);

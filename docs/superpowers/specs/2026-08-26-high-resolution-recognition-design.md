@@ -18,11 +18,13 @@ accept only an exact 16-character uppercase alphanumeric code.
 
 ## Approach
 
-For each photo, the app will process its four right-angle orientations one at
-a time. It will render one full-resolution orientation, run sparse-text OCR,
-and retain line bounding boxes whose normalized whitelist text is plausibly a
-serial (12 to 20 characters). It releases that orientation before moving to
-the next one, avoiding four full-size canvases in memory simultaneously.
+For each photo, the app first processes its original orientation at full
+resolution. Only when it finds no exact serial locator read does it try the
+90-degree, 270-degree, and finally 180-degree orientations, stopping at the
+first orientation with a serial. Each locator scan retains line bounding boxes
+whose normalized whitelist text is plausibly a serial (12 to 20 characters).
+It releases an unsuccessful orientation before moving to the next one, avoiding
+multiple full-size canvases in memory simultaneously.
 
 Each candidate line becomes a full-resolution crop with a small surrounding
 margin. The app rescans that crop in single-line mode using an unchanged crop,
@@ -30,6 +32,11 @@ a grayscale crop, and a locally thresholded crop. The crop is never resized.
 The original locator read is retained as a review-only fallback. The crop
 results are normalized and voted per physical crop; only an exact
 16-character string that agrees across the crop variants earns `Ready`.
+
+For every `2` or `Z` in an exact locator read, the app separately scans that
+original-resolution glyph with a `2Z` allowlist. A glyph must agree across the
+same three variants before it can resolve a `2`/`Z` difference; otherwise the
+code remains in review with its crop visible.
 
 Candidates that are incomplete, disagree, or have insufficient confidence are
 shown as `Needs review`. The UI will display the full-resolution serial crop
@@ -39,8 +46,8 @@ printed value without searching the original photo.
 ## Data flow
 
 1. Decode the original image in the browser.
-2. For turns 0, 90, 180, and 270 degrees, render one original-resolution
-   canvas and perform the locator pass in sparse-text mode.
+2. Render the original-resolution canvas and perform the locator pass in
+   sparse-text mode; try rotations only when that pass finds no exact serial.
 3. Convert plausible locator lines into padded crop rectangles in that
    orientation.
 4. Rescan each crop in single-line mode with three full-resolution variants.

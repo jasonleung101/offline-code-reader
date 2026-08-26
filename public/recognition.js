@@ -1,9 +1,16 @@
-export const ORIENTATIONS = [0, 90, 180, 270];
+export const ORIENTATIONS = [0, 90, 270, 180];
 export const LOCATOR_MIN_LENGTH = 12;
 export const LOCATOR_MAX_LENGTH = 20;
 
 function normalizedLocatorText(text = '') {
   return String(text).toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+function locatorSymbols(line, text) {
+  const symbols = (line?.words ?? []).flatMap((word) => word.symbols ?? []);
+  const normalized = symbols.map((symbol) => normalizedLocatorText(symbol.text)).join('');
+  if (normalized !== text) return [];
+  return symbols.map((symbol, index) => ({ index, value: normalizedLocatorText(symbol.text), bbox: symbol.bbox }));
 }
 
 export function isPlausibleLocatorLine(line) {
@@ -24,7 +31,9 @@ export function locatorCrops(lines, width, height) {
   return (lines ?? [])
     .filter(isPlausibleLocatorLine)
     .filter(({ bbox }) => bbox.y1 - bbox.y0 >= minimumLineHeight)
-    .map(({ bbox, confidence, text }) => {
+    .map((line) => {
+      const { bbox, confidence } = line;
+      const text = normalizedLocatorText(line.text);
       const lineHeight = bbox.y1 - bbox.y0;
       const horizontalPadding = Math.max(24, Math.round(lineHeight * 0.75));
       const verticalPadding = Math.max(16, Math.round(lineHeight * 0.45));
@@ -37,11 +46,28 @@ export function locatorCrops(lines, width, height) {
         y: y0,
         width: x1 - x0,
         height: y1 - y0,
-        locatorText: normalizedLocatorText(text),
+        locatorText: text,
         locatorConfidence: Math.round(Number(confidence) || 0),
+        ambiguousGlyphs: locatorSymbols(line, text)
+          .filter((symbol) => (symbol.value === '2' || symbol.value === 'Z') && symbol.bbox),
       };
     })
     .filter((crop) => crop.width > 0 && crop.height > 0);
+}
+
+export function hasExactLocatorSerial(crops) {
+  return (crops ?? []).some((crop) => /^[A-Z0-9]{16}$/.test(crop.locatorText));
+}
+
+export function applyGlyphResolutions(code, resolutions) {
+  const characters = String(code).split('');
+  for (const resolution of resolutions ?? []) {
+    if ((characters[resolution.index] === '2' || characters[resolution.index] === 'Z')
+      && (resolution.value === '2' || resolution.value === 'Z')) {
+      characters[resolution.index] = resolution.value;
+    }
+  }
+  return characters.join('');
 }
 
 export function chooseUniqueCandidates(candidates) {
