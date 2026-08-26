@@ -1,6 +1,6 @@
 {
   "name": "offline-code-reader",
-  "version": "0.4.0",
+  "version": "0.3.1",
   "type": "module",
   "private": true,
   "description": "Private, static PWA for extracting fixed-format serial codes from photographs.",
@@ -12,7 +12,6 @@
   },
   "dependencies": {
     "@tesseract.js-data/eng": "^1.0.0",
-    "@tesseract.js-data/jpn": "^1.0.0",
     "tesseract.js": "^5.1.1"
   }
 }

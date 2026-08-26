@@ -26,10 +26,6 @@ export function isPlausibleLocatorLine(line) {
     && box.y1 > box.y0;
 }
 
-export function isSerialNumberLabel(text = '') {
-  return String(text).replace(/[\s\u3000]/g, '').includes('シリアルナン');
-}
-
 export function locatorCrops(lines, width, height) {
   const minimumLineHeight = Math.max(24, Math.round(height * 0.015));
   return (lines ?? [])
@@ -52,34 +48,11 @@ export function locatorCrops(lines, width, height) {
         height: y1 - y0,
         locatorText: text,
         locatorConfidence: Math.round(Number(confidence) || 0),
-        lineBox: { x0: bbox.x0, y0: bbox.y0, x1: bbox.x1, y1: bbox.y1 },
         ambiguousGlyphs: locatorSymbols(line, text)
           .filter((symbol) => (symbol.value === '2' || symbol.value === 'Z') && symbol.bbox),
       };
     })
     .filter((crop) => crop.width > 0 && crop.height > 0);
-}
-
-export function serialLabelCrop(crop, width, height) {
-  const box = crop.lineBox;
-  const lineWidth = box.x1 - box.x0;
-  const lineHeight = box.y1 - box.y0;
-  const x = Math.max(0, Math.floor(box.x0 - (lineHeight * 0.5)));
-  const y = Math.max(0, Math.floor(box.y0 - (lineHeight * 0.35)));
-  const x1 = Math.min(width, Math.ceil(box.x0 + (lineWidth * 0.55)));
-  const y1 = Math.min(height, Math.ceil(box.y0 + (lineHeight * 0.25)));
-  return { x, y, width: x1 - x, height: y1 - y };
-}
-
-export function serialReviewCrop(crop, width, height) {
-  const label = serialLabelCrop(crop, width, height);
-  const box = crop.lineBox;
-  const lineHeight = box.y1 - box.y0;
-  const x = label.x;
-  const y = label.y;
-  const x1 = Math.min(width, Math.ceil(box.x1 + (lineHeight * 0.2)));
-  const y1 = Math.min(height, Math.ceil(box.y1 + (lineHeight * 0.2)));
-  return { x, y, width: x1 - x, height: y1 - y };
 }
 
 export function hasExactLocatorSerial(crops) {

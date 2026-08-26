@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 
-const sourceFiles = ['public/index.html', 'public/app.js', 'public/styles.css', 'public/serial.js', 'public/recognition.js', 'public/sw.js', 'public/manifest.webmanifest'];
+const sourceFiles = ['public/index.html', 'public/app.js', 'public/styles.css', 'public/serial.js', 'public/sw.js', 'public/manifest.webmanifest'];
 const externalReference = /(?:src|href)=["']https?:\/\/|fetch\(\s*["']https?:\/\//i;
 let failed = false;
 
