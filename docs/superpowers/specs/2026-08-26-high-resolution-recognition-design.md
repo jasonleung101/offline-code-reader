@@ -27,7 +27,8 @@ the next one, avoiding four full-size canvases in memory simultaneously.
 Each candidate line becomes a full-resolution crop with a small surrounding
 margin. The app rescans that crop in single-line mode using an unchanged crop,
 a grayscale crop, and a locally thresholded crop. The crop is never resized.
-The results are normalized and voted per physical crop; only an exact
+The original locator read is retained as a review-only fallback. The crop
+results are normalized and voted per physical crop; only an exact
 16-character string that agrees across the crop variants earns `Ready`.
 
 Candidates that are incomplete, disagree, or have insufficient confidence are

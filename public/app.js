@@ -1,11 +1,10 @@
-import { buildCsv, canConfirmSerial, canCopySerial, chooseCandidates, extractSerials, isValidSerial, normalizeSerial } from './serial.js';
+import { buildCsv, canConfirmSerial, canCopySerial, chooseCandidates, isValidSerial, normalizeSerial } from './serial.js';
 import { snapshotSelectedImages } from './photo-files.js';
+import { ORIENTATIONS, chooseUniqueCandidates, locatorCrops } from './recognition.js';
 
-export const APP_VERSION = '0.2.0';
+export const APP_VERSION = '0.3.0';
 
 const OCR_START_TIMEOUT_MS = 30000;
-const FULL_SCAN_WIDTH = 1600;
-const HIGH_CONFIDENCE = 90;
 const state = { items: [], workerPromise: null, queue: Promise.resolve() };
 
 const dom = {
@@ -95,6 +94,13 @@ function renderEntry(item, entry) {
     render();
   });
 
+  const preview = entry.cropUrl ? document.createElement('img') : null;
+  if (preview) {
+    preview.className = 'serial-crop';
+    preview.src = entry.cropUrl;
+    preview.alt = `High-resolution serial crop for ${item.file.name}`;
+  }
+
   const detail = document.createElement('div');
   detail.className = 'result-detail';
   detail.textContent = entryLabel(entry);
@@ -123,6 +129,7 @@ function renderEntry(item, entry) {
     actions.append(copy);
   }
 
+  if (preview) entryRow.append(preview);
   entryRow.append(input, detail, actions);
   return entryRow;
 }
@@ -193,17 +200,25 @@ function imageFromFile(file) {
   });
 }
 
-function drawScaled(image) {
+function drawOriented(image, rotation) {
   const sourceWidth = image.naturalWidth || image.width;
   const sourceHeight = image.naturalHeight || image.height;
-  const scale = Math.min(1, FULL_SCAN_WIDTH / sourceWidth);
   const canvas = document.createElement('canvas');
-  canvas.width = Math.max(1, Math.round(sourceWidth * scale));
-  canvas.height = Math.max(1, Math.round(sourceHeight * scale));
+  const sideways = rotation === 90 || rotation === 270;
+  canvas.width = sideways ? sourceHeight : sourceWidth;
+  canvas.height = sideways ? sourceWidth : sourceHeight;
   const context = canvas.getContext('2d', { willReadFrequently: true });
-  context.imageSmoothingEnabled = true;
-  context.imageSmoothingQuality = 'high';
-  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  if (rotation === 90) {
+    context.translate(canvas.width, 0);
+    context.rotate(Math.PI / 2);
+  } else if (rotation === 180) {
+    context.translate(canvas.width, canvas.height);
+    context.rotate(Math.PI);
+  } else if (rotation === 270) {
+    context.translate(0, canvas.height);
+    context.rotate(-Math.PI / 2);
+  }
+  context.drawImage(image, 0, 0, sourceWidth, sourceHeight);
   return canvas;
 }
 
@@ -213,6 +228,15 @@ function cloneCanvas(canvas) {
   clone.height = canvas.height;
   clone.getContext('2d', { willReadFrequently: true }).drawImage(canvas, 0, 0);
   return clone;
+}
+
+function cropCanvas(source, crop) {
+  const canvas = document.createElement('canvas');
+  canvas.width = crop.width;
+  canvas.height = crop.height;
+  canvas.getContext('2d', { willReadFrequently: true })
+    .drawImage(source, crop.x, crop.y, crop.width, crop.height, 0, 0, crop.width, crop.height);
+  return canvas;
 }
 
 function buildVariants(source) {
@@ -229,13 +253,35 @@ function buildVariants(source) {
   }
   context.putImageData(pixels, 0, 0);
 
-  const average = values.reduce((total, value) => total + value, 0) / values.length;
   const thresholded = cloneCanvas(grayscale);
   const thresholdContext = thresholded.getContext('2d', { willReadFrequently: true });
   const thresholdPixels = thresholdContext.getImageData(0, 0, thresholded.width, thresholded.height);
-  const threshold = Math.max(120, Math.min(210, Math.round(average * 0.9)));
+  const width = thresholded.width;
+  const height = thresholded.height;
+  const integral = new Uint32Array((width + 1) * (height + 1));
+  for (let y = 1; y <= height; y += 1) {
+    let rowSum = 0;
+    for (let x = 1; x <= width; x += 1) {
+      rowSum += values[((y - 1) * width) + x - 1];
+      integral[(y * (width + 1)) + x] = integral[((y - 1) * (width + 1)) + x] + rowSum;
+    }
+  }
+  const radius = Math.max(12, Math.round(Math.min(width, height) / 18));
   for (let index = 0; index < thresholdPixels.data.length; index += 4) {
-    const value = thresholdPixels.data[index] > threshold ? 255 : 0;
+    const pixelIndex = index / 4;
+    const x = pixelIndex % width;
+    const y = Math.floor(pixelIndex / width);
+    const x0 = Math.max(0, x - radius);
+    const y0 = Math.max(0, y - radius);
+    const x1 = Math.min(width - 1, x + radius);
+    const y1 = Math.min(height - 1, y + radius);
+    const integralWidth = width + 1;
+    const total = integral[((y1 + 1) * integralWidth) + x1 + 1]
+      - integral[(y0 * integralWidth) + x1 + 1]
+      - integral[((y1 + 1) * integralWidth) + x0]
+      + integral[(y0 * integralWidth) + x0];
+    const average = total / ((x1 - x0 + 1) * (y1 - y0 + 1));
+    const value = values[pixelIndex] < average * 0.86 ? 0 : 255;
     thresholdPixels.data[index] = value;
     thresholdPixels.data[index + 1] = value;
     thresholdPixels.data[index + 2] = value;
@@ -286,45 +332,87 @@ async function getWorker() {
 }
 
 async function scanPass(worker, canvas) {
+  await worker.setParameters({ tessedit_pageseg_mode: '11' });
   const result = await worker.recognize(canvas, {}, { text: true, blocks: true });
-  const reads = [];
-  for (const line of result.data.lines ?? []) {
-    for (const code of extractSerials(line.text)) {
-      reads.push({ text: code, confidence: Math.round(line.confidence) });
-    }
+  return result.data.lines ?? [];
+}
+
+async function scanSerialCrop(worker, canvas) {
+  await worker.setParameters({ tessedit_pageseg_mode: '7' });
+  const result = await worker.recognize(canvas, {}, { text: true });
+  const code = normalizeSerial(result.data.text);
+  return isValidSerial(code) ? [{ text: code, confidence: Math.round(result.data.confidence) }] : [];
+}
+
+function canvasObjectUrl(canvas) {
+  return new Promise((resolve) => {
+    canvas.toBlob((blob) => resolve(blob ? URL.createObjectURL(blob) : ''), 'image/jpeg', 0.92);
+  });
+}
+
+function revokeCodePreviews(item) {
+  for (const entry of item.codes) {
+    if (entry.cropUrl) URL.revokeObjectURL(entry.cropUrl);
   }
-  return reads;
 }
 
 async function processItem(item) {
   item.status = 'processing';
   item.error = '';
+  revokeCodePreviews(item);
   item.codes = [];
   render();
   try {
     const image = await imageFromFile(item.file);
-    const variants = buildVariants(drawScaled(image));
     const worker = await getWorker();
-
     const batchIndex = state.items.indexOf(item) + 1;
-    setProgress(`Scanning photo ${batchIndex} of ${state.items.length}`, 0, 'Pass 1');
-    const firstPass = await scanPass(worker, variants[0]);
-    const needsDeepScan = firstPass.length === 0 || firstPass.some((read) => read.confidence < HIGH_CONFIDENCE);
-    const passCount = needsDeepScan ? 3 : 2;
-
-    const passes = [firstPass];
-    for (let index = 1; index < passCount; index += 1) {
-      setProgress(`Scanning photo ${batchIndex} of ${state.items.length}`, ((index - 1) / (passCount - 1)) * 100, `Pass ${index + 1}/${passCount}`);
-      passes.push(await scanPass(worker, variants[index]));
+    const candidates = [];
+    for (let orientationIndex = 0; orientationIndex < ORIENTATIONS.length; orientationIndex += 1) {
+      const rotation = ORIENTATIONS[orientationIndex];
+      setProgress(`Locating serial lines in photo ${batchIndex} of ${state.items.length}`, (orientationIndex / ORIENTATIONS.length) * 100, `${rotation}° orientation`);
+      const oriented = drawOriented(image, rotation);
+      const crops = locatorCrops(await scanPass(worker, oriented), oriented.width, oriented.height);
+      for (let cropIndex = 0; cropIndex < crops.length; cropIndex += 1) {
+        const crop = cropCanvas(oriented, crops[cropIndex]);
+        const variants = buildVariants(crop);
+        const passes = [];
+        for (let variantIndex = 0; variantIndex < variants.length; variantIndex += 1) {
+          setProgress(`Confirming serial lines in photo ${batchIndex} of ${state.items.length}`, ((orientationIndex + ((cropIndex + (variantIndex / variants.length)) / Math.max(crops.length, 1))) / ORIENTATIONS.length) * 100, `${rotation}° · candidate ${cropIndex + 1}/${crops.length}`);
+          passes.push(await scanSerialCrop(worker, variants[variantIndex]));
+        }
+        const cropCandidates = chooseCandidates(passes);
+        if (isValidSerial(crops[cropIndex].locatorText)) {
+          cropCandidates.push({
+            code: crops[cropIndex].locatorText,
+            confidence: crops[cropIndex].locatorConfidence,
+            agreement: 1,
+            passes: variants.length,
+            trusted: false,
+          });
+        }
+        for (const candidate of cropCandidates) {
+          candidates.push({
+            ...candidate,
+            cropUrl: candidate.trusted ? '' : await canvasObjectUrl(crop),
+          });
+        }
+        crop.width = 1;
+        crop.height = 1;
+      }
+      oriented.width = 1;
+      oriented.height = 1;
     }
-
-    const candidates = chooseCandidates(passes);
-    if (!candidates.length) {
+    const uniqueCandidates = chooseUniqueCandidates(candidates);
+    const selected = new Set(uniqueCandidates);
+    for (const candidate of candidates) {
+      if (!selected.has(candidate) && candidate.cropUrl) URL.revokeObjectURL(candidate.cropUrl);
+    }
+    if (!uniqueCandidates.length) {
       item.status = 'error';
       item.error = 'No 16-character serial codes were detected in this photo.';
     } else {
       item.status = 'ok';
-      item.codes = candidates.map((candidate) => ({
+      item.codes = uniqueCandidates.map((candidate) => ({
         ...candidate,
         status: candidate.trusted ? 'ready' : 'review',
       }));
@@ -380,7 +468,10 @@ function copyCodes() {
 
 function clearBatch() {
   if (!state.items.length || !window.confirm('Clear all photos and results from this active batch?')) return;
-  state.items.forEach((item) => URL.revokeObjectURL(item.previewUrl));
+  state.items.forEach((item) => {
+    URL.revokeObjectURL(item.previewUrl);
+    revokeCodePreviews(item);
+  });
   state.items = [];
   dom.photoInput.value = '';
   clearProgress();
