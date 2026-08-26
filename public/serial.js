@@ -10,56 +10,58 @@ export function isValidSerial(value) {
   return SERIAL_PATTERN.test(value);
 }
 
-export function canConfirmSerial(item) {
-  return item.status === 'review' && isValidSerial(item.code);
+export function extractSerials(text = '') {
+  return String(text)
+    .toUpperCase()
+    .split(/[^A-Z0-9]+/)
+    .filter((token) => SERIAL_PATTERN.test(token));
 }
 
-export function canCopySerial(item) {
-  return isValidSerial(item.code) && ['ready', 'verified'].includes(item.status);
+export function canConfirmSerial(entry) {
+  return entry.status === 'review' && isValidSerial(entry.code);
 }
 
-export function chooseCandidate(reads) {
-  const validReads = reads
-    .map((read) => ({ ...read, code: normalizeSerial(read.text) }))
-    .filter((read) => isValidSerial(read.code));
+export function canCopySerial(entry) {
+  return isValidSerial(entry.code) && ['ready', 'verified'].includes(entry.status);
+}
 
-  if (!validReads.length) {
-    return { code: '', confidence: 0, agreement: 0, trusted: false, reads: validReads };
+export function chooseCandidates(passes) {
+  const totals = new Map();
+  for (const pass of passes) {
+    for (const read of pass) {
+      const code = normalizeSerial(read.text ?? read.code);
+      if (!isValidSerial(code)) continue;
+      const total = totals.get(code) ?? { code, confidenceSum: 0, agreement: 0 };
+      total.confidenceSum += Number(read.confidence) || 0;
+      total.agreement += 1;
+      totals.set(code, total);
+    }
   }
 
-  const groups = new Map();
-  for (const read of validReads) {
-    const group = groups.get(read.code) ?? { code: read.code, confidence: 0, count: 0 };
-    group.count += 1;
-    group.confidence += Number(read.confidence) || 0;
-    groups.set(read.code, group);
-  }
-
-  const best = [...groups.values()].sort((left, right) => (
-    right.count - left.count || right.confidence - left.confidence
-  ))[0];
-  const confidence = Math.round(best.confidence / best.count);
-
-  return {
-    code: best.code,
-    confidence,
-    agreement: best.count,
-    trusted: best.count === 3 && confidence >= 85,
-    reads: validReads,
-  };
+  return [...totals.values()].map((total) => {
+    const confidence = Math.round(total.confidenceSum / total.agreement);
+    return {
+      code: total.code,
+      confidence,
+      agreement: total.agreement,
+      passes: passes.length,
+      trusted: total.agreement === passes.length && passes.length >= 2 && confidence >= 85,
+    };
+  });
 }
 
 export function csvCell(value) {
   return `"${String(value).replaceAll('"', '""')}"`;
 }
 
-export function buildCsv(items) {
-  const header = ['filename', 'serial_code', 'status', 'ocr_confidence'];
-  const rows = items.map((item) => [
-    item.file.name,
-    item.code,
-    item.status,
-    item.confidence == null ? '' : item.confidence,
+export function buildCsv(rows) {
+  const header = ['filename', 'code_index', 'serial_code', 'status', 'ocr_confidence'];
+  const body = rows.map((row) => [
+    row.file.name,
+    row.index,
+    row.code,
+    row.status,
+    row.confidence == null ? '' : row.confidence,
   ]);
-  return [header, ...rows].map((row) => row.map(csvCell).join(',')).join('\r\n');
+  return [header, ...body].map((row) => row.map(csvCell).join(',')).join('\r\n');
 }

@@ -1,13 +1,17 @@
-import { buildCsv, canConfirmSerial, canCopySerial, chooseCandidate, isValidSerial, normalizeSerial } from './serial.js';
+import { buildCsv, canConfirmSerial, canCopySerial, chooseCandidates, extractSerials, isValidSerial, normalizeSerial } from './serial.js';
 import { snapshotSelectedImages } from './photo-files.js';
 
-const DEFAULT_CROP = { top: 0.78, height: 0.17, width: 0.74 };
+export const APP_VERSION = '0.2.0';
+
 const OCR_START_TIMEOUT_MS = 30000;
-const state = { items: [], workerPromise: null, queue: Promise.resolve(), activeCropId: null };
+const FULL_SCAN_WIDTH = 1600;
+const HIGH_CONFIDENCE = 90;
+const state = { items: [], workerPromise: null, queue: Promise.resolve() };
 
 const dom = {
   photoInput: document.querySelector('#photo-input'),
   status: document.querySelector('#connection-status'),
+  version: document.querySelector('#app-version'),
   progressSection: document.querySelector('#progress-section'),
   progressText: document.querySelector('#progress-text'),
   progressCount: document.querySelector('#progress-count'),
@@ -19,15 +23,6 @@ const dom = {
   copy: document.querySelector('#copy-button'),
   export: document.querySelector('#export-button'),
   clear: document.querySelector('#clear-button'),
-  cropDialog: document.querySelector('#crop-dialog'),
-  cropPreview: document.querySelector('#crop-preview'),
-  cropTop: document.querySelector('#crop-top'),
-  cropHeight: document.querySelector('#crop-height'),
-  cropWidth: document.querySelector('#crop-width'),
-  cropTopOutput: document.querySelector('#crop-top-output'),
-  cropHeightOutput: document.querySelector('#crop-height-output'),
-  cropWidthOutput: document.querySelector('#crop-width-output'),
-  cropRun: document.querySelector('#crop-run-button'),
 };
 
 function getItem(id) {
@@ -47,36 +42,89 @@ function clearProgress() {
   dom.progressText.textContent = '';
 }
 
-function readyItems() {
-  return state.items.filter((item) => isValidSerial(item.code) && ['ready', 'verified'].includes(item.status));
+function exportRows() {
+  return state.items.flatMap((item) => item.codes.map((entry, index) => ({ file: item.file, index: index + 1, ...entry })))
+    .filter((row) => isValidSerial(row.code) && ['ready', 'verified'].includes(row.status));
 }
 
-function statusLabel(item) {
-  if (item.status === 'ready') return 'Ready';
-  if (item.status === 'verified') return 'Verified';
+function photoStatusLabel(item) {
   if (item.status === 'processing') return 'Reading';
   if (item.status === 'error') return 'Could not read';
-  return 'Needs review';
+  return `${item.codes.length} code${item.codes.length === 1 ? '' : 's'} found`;
 }
 
-function itemDetail(item) {
-  if (item.status === 'ready') return `Confirmed by all ${item.agreement}/3 OCR passes · average confidence ${item.confidence}%`;
-  if (item.status === 'verified') return 'Confirmed by you';
-  if (item.status === 'processing') return 'Preparing local OCR…';
-  if (item.status === 'error') return item.error || 'Try a clearer photo or adjust the crop.';
-  if (item.code) return `One OCR pass suggested this code (${item.confidence}% confidence). Please check it.`;
-  return 'No safe 16-character result. Check the photo and enter the printed code.';
+function entryLabel(entry) {
+  const agreement = entry.agreement === entry.passes ? `all ${entry.passes}` : `${entry.agreement}/${entry.passes}`;
+  if (entry.status === 'ready') return `Confirmed by ${agreement} full-scan passes · average confidence ${entry.confidence}%`;
+  if (entry.status === 'verified') return 'Confirmed by you';
+  if (entry.code) return `Found in ${agreement} pass${entry.passes === 1 ? '' : 'es'} (${entry.confidence}% confidence). Please check it.`;
+  return 'Enter the printed code.';
 }
 
 function render() {
   const hasItems = state.items.length > 0;
-  const exportable = readyItems();
+  const rows = exportRows();
   dom.resultsTitle.textContent = hasItems ? `${state.items.length} photo${state.items.length === 1 ? '' : 's'} in this batch` : 'No photos yet';
   dom.emptyState.hidden = hasItems;
-  dom.copy.disabled = exportable.length === 0;
-  dom.export.disabled = exportable.length === 0;
+  dom.copy.disabled = rows.length === 0;
+  dom.export.disabled = rows.length === 0;
   dom.clear.disabled = !hasItems;
   dom.list.replaceChildren(...state.items.map(renderItem));
+}
+
+function renderEntry(item, entry) {
+  const entryRow = document.createElement('li');
+  entryRow.className = 'code-entry';
+
+  const input = document.createElement('input');
+  input.className = 'code-input';
+  input.type = 'text';
+  input.inputMode = 'text';
+  input.maxLength = 16;
+  input.autocapitalize = 'characters';
+  input.autocomplete = 'off';
+  input.spellcheck = false;
+  input.value = entry.code;
+  input.placeholder = '16-CHARACTER CODE';
+  input.setAttribute('aria-label', `Serial code ${item.codes.indexOf(entry) + 1} for ${item.file.name}`);
+  input.setAttribute('aria-invalid', String(entry.code.length > 0 && !isValidSerial(entry.code)));
+  input.addEventListener('input', () => {
+    entry.code = normalizeSerial(input.value);
+    input.value = entry.code;
+    entry.status = isValidSerial(entry.code) ? 'verified' : 'review';
+    render();
+  });
+
+  const detail = document.createElement('div');
+  detail.className = 'result-detail';
+  detail.textContent = entryLabel(entry);
+
+  const actions = document.createElement('div');
+  actions.className = 'result-actions';
+
+  if (canConfirmSerial(entry)) {
+    const confirm = document.createElement('button');
+    confirm.type = 'button';
+    confirm.className = 'primary-button';
+    confirm.textContent = 'Confirm code';
+    confirm.addEventListener('click', () => {
+      entry.status = 'verified';
+      render();
+    });
+    actions.append(confirm);
+  }
+
+  if (canCopySerial(entry)) {
+    const copy = document.createElement('button');
+    copy.type = 'button';
+    copy.className = 'secondary-button';
+    copy.textContent = 'Copy code';
+    copy.addEventListener('click', () => copyText(entry.code, copy, 'Copy code'));
+    actions.append(copy);
+  }
+
+  entryRow.append(input, detail, actions);
+  return entryRow;
 }
 
 function renderItem(item) {
@@ -99,64 +147,38 @@ function renderItem(item) {
   name.textContent = item.file.name;
   name.title = item.file.name;
   const status = document.createElement('span');
-  status.className = `status ${item.status === 'verified' ? 'ready' : item.status}`;
-  status.textContent = statusLabel(item);
+  status.className = `status ${item.status === 'error' ? 'error' : 'ready'}`;
+  status.textContent = photoStatusLabel(item);
   top.append(name, status);
 
-  const input = document.createElement('input');
-  input.className = 'code-input';
-  input.type = 'text';
-  input.inputMode = 'text';
-  input.maxLength = 16;
-  input.autocapitalize = 'characters';
-  input.autocomplete = 'off';
-  input.spellcheck = false;
-  input.value = item.code;
-  input.placeholder = '16-CHARACTER CODE';
-  input.setAttribute('aria-label', `Serial code for ${item.file.name}`);
-  input.setAttribute('aria-invalid', String(item.code.length > 0 && !isValidSerial(item.code)));
-  input.addEventListener('input', () => {
-    item.code = normalizeSerial(input.value);
-    input.value = item.code;
-    item.status = isValidSerial(item.code) ? 'verified' : 'review';
-    render();
-  });
+  main.append(top);
 
-  const detail = document.createElement('div');
-  detail.className = 'result-detail';
-  detail.textContent = itemDetail(item);
+  if (item.status === 'error') {
+    const detail = document.createElement('div');
+    detail.className = 'result-detail';
+    detail.textContent = item.error || 'Try a clearer photo or rescan.';
+    main.append(detail);
+  }
+
+  if (item.codes.length > 0) {
+    const codeList = document.createElement('ul');
+    codeList.className = 'code-list';
+    codeList.replaceChildren(...item.codes.map((entry) => renderEntry(item, entry)));
+    main.append(codeList);
+  }
 
   const actions = document.createElement('div');
   actions.className = 'result-actions';
   const retry = document.createElement('button');
   retry.type = 'button';
   retry.className = 'secondary-button';
-  retry.textContent = 'Adjust crop & retry';
-  retry.addEventListener('click', () => openCropDialog(item));
+  retry.textContent = item.status === 'error' && !item.codes.length ? 'Retry scan' : 'Re-scan photo';
+  retry.addEventListener('click', () => {
+    state.queue = state.queue.then(() => processItem(item)).then(clearProgress);
+  });
   actions.append(retry);
+  main.append(actions);
 
-  if (canConfirmSerial(item)) {
-    const confirm = document.createElement('button');
-    confirm.type = 'button';
-    confirm.className = 'primary-button';
-    confirm.textContent = 'Confirm code';
-    confirm.addEventListener('click', () => {
-      item.status = 'verified';
-      render();
-    });
-    actions.append(confirm);
-  }
-
-  if (canCopySerial(item)) {
-    const copy = document.createElement('button');
-    copy.type = 'button';
-    copy.className = 'secondary-button';
-    copy.textContent = 'Copy code';
-    copy.addEventListener('click', () => copyText(item.code, copy, 'Copy code'));
-    actions.append(copy);
-  }
-
-  main.append(top, input, detail, actions);
   row.append(main);
   return row;
 }
@@ -171,22 +193,17 @@ function imageFromFile(file) {
   });
 }
 
-function drawCrop(image, crop) {
+function drawScaled(image) {
   const sourceWidth = image.naturalWidth || image.width;
   const sourceHeight = image.naturalHeight || image.height;
-  const left = Math.max(0, sourceWidth * 0.02);
-  const top = Math.max(0, sourceHeight * crop.top);
-  const width = Math.min(sourceWidth - left, sourceWidth * crop.width);
-  const height = Math.min(sourceHeight - top, sourceHeight * crop.height);
-  const outputWidth = Math.max(600, Math.min(2200, Math.round(width * 2)));
-  const outputHeight = Math.max(110, Math.round(outputWidth * (height / width)));
+  const scale = Math.min(1, FULL_SCAN_WIDTH / sourceWidth);
   const canvas = document.createElement('canvas');
-  canvas.width = outputWidth;
-  canvas.height = outputHeight;
+  canvas.width = Math.max(1, Math.round(sourceWidth * scale));
+  canvas.height = Math.max(1, Math.round(sourceHeight * scale));
   const context = canvas.getContext('2d', { willReadFrequently: true });
   context.imageSmoothingEnabled = true;
   context.imageSmoothingQuality = 'high';
-  context.drawImage(image, left, top, width, height, 0, 0, outputWidth, outputHeight);
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
   return canvas;
 }
 
@@ -243,16 +260,16 @@ async function getWorker() {
       langPath: './vendor/lang-data',
       cacheMethod: 'none',
       workerBlobURL: false,
-      logger: ({ status, progress }) => {
+      logger: ({ progress }) => {
         const percent = Math.round((progress || 0) * 100);
-        setProgress(status === 'recognizing text' ? 'Reading serial code locally…' : 'Loading offline OCR…', percent);
+        setProgress('Reading serial codes locally…', percent);
       },
     }).then(async (worker) => {
       await worker.setParameters({
         tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
         preserve_interword_spaces: '0',
         user_defined_dpi: '300',
-        tessedit_pageseg_mode: '7',
+        tessedit_pageseg_mode: '11',
       });
       return worker;
     });
@@ -268,26 +285,50 @@ async function getWorker() {
   return state.workerPromise;
 }
 
+async function scanPass(worker, canvas) {
+  const result = await worker.recognize(canvas, {}, { text: true, blocks: true });
+  const reads = [];
+  for (const line of result.data.lines ?? []) {
+    for (const code of extractSerials(line.text)) {
+      reads.push({ text: code, confidence: Math.round(line.confidence) });
+    }
+  }
+  return reads;
+}
+
 async function processItem(item) {
   item.status = 'processing';
   item.error = '';
+  item.codes = [];
   render();
   try {
     const image = await imageFromFile(item.file);
-    const crop = drawCrop(image, item.crop);
-    const variants = buildVariants(crop);
+    const variants = buildVariants(drawScaled(image));
     const worker = await getWorker();
-    const reads = [];
-    for (let index = 0; index < variants.length; index += 1) {
-      setProgress(`Reading image ${state.items.indexOf(item) + 1} of ${state.items.length}`, (index / variants.length) * 100, `Pass ${index + 1}/3`);
-      const result = await worker.recognize(variants[index], {}, { text: true });
-      reads.push({ text: result.data.text, confidence: result.data.confidence });
+
+    const batchIndex = state.items.indexOf(item) + 1;
+    setProgress(`Scanning photo ${batchIndex} of ${state.items.length}`, 0, 'Pass 1');
+    const firstPass = await scanPass(worker, variants[0]);
+    const needsDeepScan = firstPass.length === 0 || firstPass.some((read) => read.confidence < HIGH_CONFIDENCE);
+    const passCount = needsDeepScan ? 3 : 2;
+
+    const passes = [firstPass];
+    for (let index = 1; index < passCount; index += 1) {
+      setProgress(`Scanning photo ${batchIndex} of ${state.items.length}`, ((index - 1) / (passCount - 1)) * 100, `Pass ${index + 1}/${passCount}`);
+      passes.push(await scanPass(worker, variants[index]));
     }
-    const selected = chooseCandidate(reads);
-    item.code = selected.code;
-    item.confidence = selected.confidence;
-    item.agreement = selected.agreement;
-    item.status = selected.trusted ? 'ready' : 'review';
+
+    const candidates = chooseCandidates(passes);
+    if (!candidates.length) {
+      item.status = 'error';
+      item.error = 'No 16-character serial codes were detected in this photo.';
+    } else {
+      item.status = 'ok';
+      item.codes = candidates.map((candidate) => ({
+        ...candidate,
+        status: candidate.trusted ? 'ready' : 'review',
+      }));
+    }
   } catch (error) {
     item.status = 'error';
     item.error = error.message || 'The image could not be processed.';
@@ -302,11 +343,9 @@ async function addFiles(fileList) {
     id: crypto.randomUUID(),
     file,
     previewUrl: URL.createObjectURL(file),
-    code: '',
-    confidence: null,
-    agreement: 0,
+    codes: [],
     status: 'processing',
-    crop: { ...DEFAULT_CROP },
+    error: '',
   }));
   state.items.push(...newItems);
   render();
@@ -314,61 +353,8 @@ async function addFiles(fileList) {
   clearProgress();
 }
 
-function updateCropControls(item) {
-  dom.cropTop.value = Math.round(item.crop.top * 100);
-  dom.cropHeight.value = Math.round(item.crop.height * 100);
-  dom.cropWidth.value = Math.round(item.crop.width * 100);
-  dom.cropTopOutput.value = `${dom.cropTop.value}%`;
-  dom.cropHeightOutput.value = `${dom.cropHeight.value}%`;
-  dom.cropWidthOutput.value = `${dom.cropWidth.value}%`;
-}
-
-async function drawCropPreview() {
-  const item = getItem(state.activeCropId);
-  if (!item) return;
-  const image = await imageFromFile(item.file);
-  const canvas = dom.cropPreview;
-  const width = 800;
-  const height = Math.round(width * ((image.naturalHeight || image.height) / (image.naturalWidth || image.width)));
-  canvas.width = width;
-  canvas.height = height;
-  const context = canvas.getContext('2d');
-  context.drawImage(image, 0, 0, width, height);
-  const left = width * 0.02;
-  const top = height * item.crop.top;
-  const cropWidth = width * item.crop.width;
-  const cropHeight = height * item.crop.height;
-  context.fillStyle = '#0a122a88';
-  context.fillRect(0, 0, width, top);
-  context.fillRect(0, top, left, cropHeight);
-  context.fillRect(left + cropWidth, top, width - left - cropWidth, cropHeight);
-  context.fillRect(0, top + cropHeight, width, height - top - cropHeight);
-  context.strokeStyle = '#60a5fa';
-  context.lineWidth = 5;
-  context.strokeRect(left, top, cropWidth, cropHeight);
-}
-
-function openCropDialog(item) {
-  state.activeCropId = item.id;
-  updateCropControls(item);
-  dom.cropDialog.showModal();
-  drawCropPreview().catch(() => {});
-}
-
-function updateActiveCrop() {
-  const item = getItem(state.activeCropId);
-  if (!item) return;
-  item.crop = {
-    top: Number(dom.cropTop.value) / 100,
-    height: Number(dom.cropHeight.value) / 100,
-    width: Number(dom.cropWidth.value) / 100,
-  };
-  updateCropControls(item);
-  drawCropPreview().catch(() => {});
-}
-
 function downloadCsv() {
-  const csv = buildCsv(readyItems());
+  const csv = buildCsv(exportRows());
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
@@ -389,7 +375,7 @@ async function copyText(text, button, defaultLabel) {
 }
 
 function copyCodes() {
-  return copyText(readyItems().map((item) => item.code).join('\n'), dom.copy, 'Copy codes');
+  return copyText(exportRows().map((row) => row.code).join('\n'), dom.copy, 'Copy codes');
 }
 
 function clearBatch() {
@@ -415,13 +401,7 @@ dom.photoInput.addEventListener('change', (event) => {
 dom.copy.addEventListener('click', copyCodes);
 dom.export.addEventListener('click', downloadCsv);
 dom.clear.addEventListener('click', clearBatch);
-dom.cropRun.addEventListener('click', () => {
-  const item = getItem(state.activeCropId);
-  if (!item) return;
-  dom.cropDialog.close();
-  state.queue = state.queue.then(() => processItem(item)).then(clearProgress);
-});
-[dom.cropTop, dom.cropHeight, dom.cropWidth].forEach((input) => input.addEventListener('input', updateActiveCrop));
+dom.version.textContent = `v${APP_VERSION}`;
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').then(updateConnectionStatus).catch(() => {

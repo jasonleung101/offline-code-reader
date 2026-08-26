@@ -25,7 +25,7 @@
       <section class="upload-card" aria-labelledby="add-photos-title">
         <div>
           <h2 id="add-photos-title">Add code photos</h2>
-          <p>Use clear, straight photos of the printed serial-number panel. QR codes are ignored.</p>
+          <p>Photos can contain one or more 16-character serial codes, anywhere in the frame. QR codes are ignored.</p>
         </div>
         <label class="primary-button" for="photo-input">
           <span>Select photos</span>
@@ -53,27 +53,15 @@
             <button id="clear-button" class="text-button" type="button" disabled>Clear batch</button>
           </div>
         </div>
-        <p id="empty-state" class="empty-state">Each image remains on this device. Results that are not safely verified will ask for your review.</p>
+        <p id="empty-state" class="empty-state">Each image remains on this device. Codes that are not safely confirmed by repeated scans will ask for your review.</p>
         <ol id="results-list" class="results-list" aria-live="polite"></ol>
       </section>
     </main>
 
-    <dialog id="crop-dialog" class="crop-dialog" aria-labelledby="crop-title">
-      <form method="dialog" class="dialog-card">
-        <div class="dialog-heading">
-          <div>
-            <p class="eyebrow">RETRY WITH A NEW CROP</p>
-            <h2 id="crop-title">Adjust the serial panel</h2>
-          </div>
-          <button class="icon-button" value="cancel" aria-label="Close crop settings">×</button>
-        </div>
-        <canvas id="crop-preview" aria-label="Preview of the crop area"></canvas>
-        <label>Panel top <output id="crop-top-output">78%</output><input id="crop-top" type="range" min="55" max="88" value="78"></label>
-        <label>Panel height <output id="crop-height-output">17%</output><input id="crop-height" type="range" min="8" max="30" value="17"></label>
-        <label>Code width <output id="crop-width-output">74%</output><input id="crop-width" type="range" min="45" max="96" value="74"></label>
-        <button id="crop-run-button" class="primary-button" value="default" type="button">Retry recognition</button>
-      </form>
-    </dialog>
+    <footer class="app-footer">
+      <span id="app-version"></span>
+      <span>On-device OCR · nothing is uploaded</span>
+    </footer>
 
     <script src="./vendor/tesseract/tesseract.min.js"></script>
     <script type="module" src="./app.js"></script>

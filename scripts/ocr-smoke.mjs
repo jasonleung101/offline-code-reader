@@ -4,8 +4,8 @@ import { createWorker } from 'tesseract.js';
 import { normalizeSerial } from '../public/serial.js';
 
 const imagePath = process.argv[2];
-const psm = process.argv[3] || '7';
-if (!imagePath) throw new Error('Usage: node scripts/ocr-smoke.mjs <cropped-image-path>');
+const psm = process.argv[3] || '11';
+if (!imagePath) throw new Error('Usage: node scripts/ocr-smoke.mjs <image-path> [psm]');
 
 const worker = await createWorker('eng', 1, {
   langPath: path.resolve('node_modules/@tesseract.js-data/eng/4.0.0_best_int'),

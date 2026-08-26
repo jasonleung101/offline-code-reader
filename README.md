@@ -1,6 +1,6 @@
 # Offline Code Reader
 
-A static, mobile-first PWA that reads 16-character printed serial codes from batches of photos. It is built for GitHub Pages and processes everything on the device.
+A static, mobile-first PWA that reads 16-character printed serial codes — one or many per photo, anywhere in the frame. It is built for GitHub Pages and processes everything on the device.
 
 ## Privacy and offline behavior
 
@@ -15,9 +15,11 @@ The app needs access to its own local assets on first use, so it must be loaded 
 
 1. Open the hosted page and wait for the status chip to say `offline cache ready`.
 2. Optionally install it from the browser's **Add to Home Screen** / **Install app** action.
-3. Select or capture photos. The app crops the lower serial panel and runs three local OCR passes.
-4. `Ready` means all three OCR passes agreed at high confidence. `Needs review` means it will not be trusted or exported until you inspect/edit it into a valid 16-character code.
-5. Copy trusted codes or export a CSV.
+3. Select or capture photos. Each photo is downscaled and scanned in full; a fast first pass locates codes anywhere in the frame, and extra passes confirm anything uncertain.
+4. `Ready` means every executed scan pass agreed at high confidence. `Needs review` means that code will not be trusted or exported until you inspect/edit it into a valid 16-character code.
+5. Copy trusted codes or export a CSV (one row per code, with its index within the photo).
+
+The app version is shown in the page footer; `npm run check:version` keeps `package.json`, the web manifest, and the UI constant in sync.
 
 ## GitHub Pages publishing
 
@@ -33,6 +35,8 @@ For a project-site URL such as `https://account.github.io/repository/`, keep all
 ```sh
 npm test
 npm run check:no-network
+npm run check:assets
+npm run check:version
 python3 -m http.server 8080 --directory public
 ```
 
@@ -40,7 +44,9 @@ Then open `http://localhost:8080`. The service worker works only on `localhost` 
 
 ## Accuracy contract
 
-The fixed 16-character format helps substantially, but OCR cannot safely promise that every blurred, skewed, or partially obscured photo is correct. This project avoids silent errors by requiring multi-pass agreement plus a confidence threshold before it marks a code `Ready`. Anything less is deliberately kept in a review state.
+The fixed 16-character format helps substantially, but OCR cannot safely promise that every blurred, skewed, or partially obscured photo is correct. This project avoids silent errors by requiring agreement across repeated full-page scans plus a confidence threshold before it marks a code `Ready` — each code is judged independently, so one weak code never blocks its neighbours. Anything less is deliberately kept in a review state.
+
+A fast sparse-text pass locates codes anywhere in the photo; when that pass already finds every code at high confidence only one confirming pass runs, otherwise two more preprocessing variants (grayscale, thresholded) are scanned and votes are tallied per code.
 
 The supplied sample is correctly isolated to its serial-panel crop; the basic offline Tesseract model flags its ambiguous result for review rather than claiming an incorrect automatic result. A custom character model trained on a representative set of your real photos is the next step if you need reliably hands-free, near-100% recognition.
 
