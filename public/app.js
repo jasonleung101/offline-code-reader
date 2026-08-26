@@ -1,12 +1,12 @@
 import { buildCsv, canConfirmSerial, canCopySerial, chooseCandidates, isValidSerial, normalizeSerial } from './serial.js';
 import { snapshotSelectedImages } from './photo-files.js';
-import { ORIENTATIONS, applyGlyphResolutions, chooseUniqueCandidates, hasExactLocatorSerial, locatorCrops } from './recognition.js';
+import { ORIENTATIONS, applyGlyphResolutions, chooseUniqueCandidates, isSerialNumberLabel, locatorCrops, serialLabelCrop, serialReviewCrop } from './recognition.js';
 
-export const APP_VERSION = '0.3.1';
+export const APP_VERSION = '0.4.0';
 
 const OCR_START_TIMEOUT_MS = 30000;
 const SERIAL_WHITELIST = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-const state = { items: [], workerPromise: null, queue: Promise.resolve() };
+const state = { items: [], workerPromise: null, labelWorkerPromise: null, queue: Promise.resolve() };
 
 const dom = {
   photoInput: document.querySelector('#photo-input'),
@@ -333,6 +333,34 @@ async function getWorker() {
   return state.workerPromise;
 }
 
+async function getLabelWorker() {
+  if (!state.labelWorkerPromise) {
+    const workerStartup = window.Tesseract.createWorker('jpn', 1, {
+      workerPath: './vendor/tesseract/worker.min.js',
+      corePath: './vendor/tesseract-core',
+      langPath: './vendor/lang-data',
+      cacheMethod: 'none',
+      workerBlobURL: false,
+    }).then(async (worker) => {
+      await worker.setParameters({
+        preserve_interword_spaces: '0',
+        user_defined_dpi: '600',
+        tessedit_pageseg_mode: '11',
+      });
+      return worker;
+    });
+    state.labelWorkerPromise = withTimeout(
+      workerStartup,
+      OCR_START_TIMEOUT_MS,
+      `Japanese label OCR startup timed out after ${Math.round(OCR_START_TIMEOUT_MS / 1000)} seconds. Reload the app and try again.`,
+    ).catch((error) => {
+      state.labelWorkerPromise = null;
+      throw new Error(`Offline label OCR could not start: ${error.message || error}`);
+    });
+  }
+  return state.labelWorkerPromise;
+}
+
 async function scanPass(worker, canvas) {
   await worker.setParameters({ tessedit_char_whitelist: SERIAL_WHITELIST, tessedit_pageseg_mode: '11' });
   const result = await worker.recognize(canvas, {}, { text: true, blocks: true });
@@ -344,6 +372,15 @@ async function scanSerialCrop(worker, canvas) {
   const result = await worker.recognize(canvas, {}, { text: true });
   const code = normalizeSerial(result.data.text);
   return isValidSerial(code) ? [{ text: code, confidence: Math.round(result.data.confidence) }] : [];
+}
+
+async function hasSerialLabel(worker, source, candidate) {
+  const labelCanvas = cropCanvas(source, serialLabelCrop(candidate, source.width, source.height));
+  await worker.setParameters({ tessedit_pageseg_mode: '11', user_defined_dpi: '600' });
+  const result = await worker.recognize(labelCanvas, {}, { text: true });
+  labelCanvas.width = 1;
+  labelCanvas.height = 1;
+  return isSerialNumberLabel(result.data.text);
 }
 
 function glyphCrop(source, glyph) {
@@ -412,13 +449,19 @@ async function processItem(item) {
       setProgress(`Locating serial lines in photo ${batchIndex} of ${state.items.length}`, (orientationIndex / ORIENTATIONS.length) * 100, `${rotation}° orientation`);
       const oriented = drawOriented(image, rotation);
       const crops = locatorCrops(await scanPass(worker, oriented), oriented.width, oriented.height);
-      if (!hasExactLocatorSerial(crops)) {
+      const labelWorker = crops.length ? await getLabelWorker() : null;
+      const labeledCrops = [];
+      for (let cropIndex = 0; cropIndex < crops.length; cropIndex += 1) {
+        setProgress(`Checking serial labels in photo ${batchIndex} of ${state.items.length}`, ((orientationIndex + ((cropIndex / Math.max(crops.length, 1)) * 0.2)) / ORIENTATIONS.length) * 100, `${rotation}° · label ${cropIndex + 1}/${crops.length}`);
+        if (await hasSerialLabel(labelWorker, oriented, crops[cropIndex])) labeledCrops.push(crops[cropIndex]);
+      }
+      if (!labeledCrops.length) {
         oriented.width = 1;
         oriented.height = 1;
         continue;
       }
-      for (let cropIndex = 0; cropIndex < crops.length; cropIndex += 1) {
-        const definition = crops[cropIndex];
+      for (let cropIndex = 0; cropIndex < labeledCrops.length; cropIndex += 1) {
+        const definition = labeledCrops[cropIndex];
         const glyphResolutions = isValidSerial(definition.locatorText)
           ? await resolveAmbiguousGlyphs(worker, oriented, definition.ambiguousGlyphs)
           : [];
@@ -427,7 +470,7 @@ async function processItem(item) {
         const variants = buildVariants(crop);
         const passes = [];
         for (let variantIndex = 0; variantIndex < variants.length; variantIndex += 1) {
-          setProgress(`Confirming serial lines in photo ${batchIndex} of ${state.items.length}`, ((orientationIndex + ((cropIndex + (variantIndex / variants.length)) / Math.max(crops.length, 1))) / ORIENTATIONS.length) * 100, `${rotation}° · candidate ${cropIndex + 1}/${crops.length}`);
+          setProgress(`Confirming serial lines in photo ${batchIndex} of ${state.items.length}`, ((orientationIndex + ((cropIndex + (variantIndex / variants.length)) / Math.max(labeledCrops.length, 1))) / ORIENTATIONS.length) * 100, `${rotation}° · candidate ${cropIndex + 1}/${labeledCrops.length}`);
           passes.push(await scanSerialCrop(worker, variants[variantIndex]));
         }
         const resolvedPasses = passes.map((pass) => pass.map((read) => ({
@@ -451,10 +494,15 @@ async function processItem(item) {
           });
         }
         for (const candidate of cropCandidates) {
+          const reviewCanvas = candidate.trusted ? null : cropCanvas(oriented, serialReviewCrop(definition, oriented.width, oriented.height));
           candidates.push({
             ...candidate,
-            cropUrl: candidate.trusted ? '' : await canvasObjectUrl(crop),
+            cropUrl: reviewCanvas ? await canvasObjectUrl(reviewCanvas) : '',
           });
+          if (reviewCanvas) {
+            reviewCanvas.width = 1;
+            reviewCanvas.height = 1;
+          }
         }
         crop.width = 1;
         crop.height = 1;
@@ -470,7 +518,7 @@ async function processItem(item) {
     }
     if (!uniqueCandidates.length) {
       item.status = 'error';
-      item.error = 'No 16-character serial codes were detected in this photo.';
+      item.error = 'No 16-character serial codes were detected below a シリアルナンバー label in this photo.';
     } else {
       item.status = 'ok';
       item.codes = uniqueCandidates.map((candidate) => ({

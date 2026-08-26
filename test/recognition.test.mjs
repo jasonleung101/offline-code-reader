@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { LOCATOR_MAX_LENGTH, LOCATOR_MIN_LENGTH, ORIENTATIONS, applyGlyphResolutions, chooseUniqueCandidates, hasExactLocatorSerial, isPlausibleLocatorLine, locatorCrops } from '../public/recognition.js';
+import { LOCATOR_MAX_LENGTH, LOCATOR_MIN_LENGTH, ORIENTATIONS, applyGlyphResolutions, chooseUniqueCandidates, hasExactLocatorSerial, isPlausibleLocatorLine, isSerialNumberLabel, locatorCrops, serialLabelCrop, serialReviewCrop } from '../public/recognition.js';
 
 const serialLine = {
   text: 'F4MU6RD6P6V7NMK2',
@@ -19,9 +19,17 @@ test('keeps plausible serial lines without presuming a suffix or QR payload', ()
 });
 
 test('adds padding to a locator crop but keeps it inside the source image', () => {
-  assert.deepEqual(locatorCrops([serialLine], 600, 500), [{ x: 62, y: 177, width: 476, height: 96, locatorText: 'F4MU6RD6P6V7NMK2', locatorConfidence: 0, ambiguousGlyphs: [] }]);
-  assert.deepEqual(locatorCrops([{ ...serialLine, bbox: { x0: 2, y0: 2, x1: 30, y1: 26 } }], 100, 100), [{ x: 0, y: 0, width: 54, height: 42, locatorText: 'F4MU6RD6P6V7NMK2', locatorConfidence: 0, ambiguousGlyphs: [] }]);
+  assert.deepEqual(locatorCrops([serialLine], 600, 500), [{ x: 62, y: 177, width: 476, height: 96, locatorText: 'F4MU6RD6P6V7NMK2', locatorConfidence: 0, lineBox: { x0: 100, y0: 200, x1: 500, y1: 250 }, ambiguousGlyphs: [] }]);
+  assert.deepEqual(locatorCrops([{ ...serialLine, bbox: { x0: 2, y0: 2, x1: 30, y1: 26 } }], 100, 100), [{ x: 0, y: 0, width: 54, height: 42, locatorText: 'F4MU6RD6P6V7NMK2', locatorConfidence: 0, lineBox: { x0: 2, y0: 2, x1: 30, y1: 26 }, ambiguousGlyphs: [] }]);
   assert.deepEqual(locatorCrops([{ ...serialLine, bbox: { x0: 2, y0: 2, x1: 30, y1: 12 } }], 100, 100), []);
+});
+
+test('requires the Japanese serial label and crops it directly above the code', () => {
+  const [crop] = locatorCrops([serialLine], 600, 500);
+  assert.equal(isSerialNumberLabel('シリ アル ナン バー'), true);
+  assert.equal(isSerialNumberLabel('応募期間'), false);
+  assert.deepEqual(serialLabelCrop(crop, 600, 500), { x: 75, y: 182, width: 245, height: 31 });
+  assert.deepEqual(serialReviewCrop(crop, 600, 500), { x: 75, y: 182, width: 435, height: 78 });
 });
 
 test('stops rotation fallbacks when the original orientation already has a serial', () => {

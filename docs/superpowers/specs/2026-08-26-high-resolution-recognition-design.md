@@ -13,6 +13,7 @@ accept only an exact 16-character uppercase alphanumeric code.
 - QR codes are neither decoded nor used to locate or validate serials.
 - No serial prefix, suffix, checksum, or other format assumption is made
   beyond the existing 16-character `A-Z0-9` rule.
+- A serial candidate must have a `シリアルナンバー` label immediately above it.
 - The shipped application remains a static, offline-capable PWA with no new
   remote dependencies.
 
@@ -26,9 +27,12 @@ whose normalized whitelist text is plausibly a serial (12 to 20 characters).
 It releases an unsuccessful orientation before moving to the next one, avoiding
 multiple full-size canvases in memory simultaneously.
 
-Each candidate line becomes a full-resolution crop with a small surrounding
-margin. The app rescans that crop in single-line mode using an unchanged crop,
-a grayscale crop, and a locally thresholded crop. The crop is never resized.
+Each candidate line receives a focused, full-resolution Japanese OCR check in
+the strip immediately above it. Only a strip that reads `シリアルナンバー`
+admits the candidate. Each admitted line becomes a full-resolution crop with a
+small surrounding margin. The app rescans that crop in single-line mode using
+an unchanged crop, a grayscale crop, and a locally thresholded crop. The crop
+is never resized.
 The original locator read is retained as a review-only fallback. The crop
 results are normalized and voted per physical crop; only an exact
 16-character string that agrees across the crop variants earns `Ready`.
@@ -48,9 +52,9 @@ printed value without searching the original photo.
 1. Decode the original image in the browser.
 2. Render the original-resolution canvas and perform the locator pass in
    sparse-text mode; try rotations only when that pass finds no exact serial.
-3. Convert plausible locator lines into padded crop rectangles in that
-   orientation.
-4. Rescan each crop in single-line mode with three full-resolution variants.
+3. Verify the Japanese serial label directly above each plausible locator line.
+4. Rescan each label-matched crop in single-line mode with three
+   full-resolution variants.
 5. Vote the crop results, deduplicate identical accepted serials, and preserve
    uncertain reads for review.
 6. Release intermediate canvases and object URLs once each item is cleared.
