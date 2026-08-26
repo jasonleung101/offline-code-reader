@@ -144,11 +144,33 @@ function renderStaging() {
   }));
 }
 
-function renderAnnotations() {
+function annotationStateText(entry) {
+  if (entry.skipped) return 'Excluded as not a serial.';
+  if (isValidSerial(entry.label)) return 'Ready for private export.';
+  return 'Enter all 16 characters or mark this crop not a serial.';
+}
+
+function updateAnnotationSummary() {
   const resolved = state.entries.filter(isTrainingEntryResolved).length;
-  dom.annotationSection.hidden = state.entries.length === 0;
   dom.annotationSummary.textContent = `${resolved} of ${state.entries.length} crops resolved`;
   dom.download.disabled = state.entries.length === 0 || resolved !== state.entries.length;
+}
+
+function updateAnnotationEntry(entry, input, skip, detail) {
+  entry.label = normalizeTrainingLabel(input.value);
+  entry.skipped = false;
+  input.value = entry.label;
+  input.disabled = false;
+  input.setAttribute('aria-invalid', String(entry.label.length > 0 && !isValidSerial(entry.label)));
+  skip.textContent = 'Not a serial';
+  detail.className = `annotation-state ${isTrainingEntryResolved(entry) ? 'is-resolved' : 'is-unresolved'}`;
+  detail.textContent = annotationStateText(entry);
+  updateAnnotationSummary();
+}
+
+function renderAnnotations() {
+  dom.annotationSection.hidden = state.entries.length === 0;
+  updateAnnotationSummary();
   dom.annotationList.replaceChildren(...state.entries.map((entry) => {
     const row = document.createElement('li');
     row.className = 'annotation-entry';
@@ -175,11 +197,6 @@ function renderAnnotations() {
     input.disabled = entry.skipped;
     input.setAttribute('aria-label', `Full serial for ${entry.sourceFile} crop ${entry.sourceIndex}`);
     input.setAttribute('aria-invalid', String(!entry.skipped && entry.label.length > 0 && !isValidSerial(entry.label)));
-    input.addEventListener('input', () => {
-      entry.label = normalizeTrainingLabel(input.value);
-      entry.skipped = false;
-      renderAnnotations();
-    });
     const actions = document.createElement('div');
     actions.className = 'result-actions';
     const skip = document.createElement('button');
@@ -193,7 +210,8 @@ function renderAnnotations() {
     actions.append(skip);
     const detail = document.createElement('p');
     detail.className = `annotation-state ${isTrainingEntryResolved(entry) ? 'is-resolved' : 'is-unresolved'}`;
-    detail.textContent = entry.skipped ? 'Excluded as not a serial.' : isValidSerial(entry.label) ? 'Ready for private export.' : 'Enter all 16 characters or mark this crop not a serial.';
+    detail.textContent = annotationStateText(entry);
+    input.addEventListener('input', () => updateAnnotationEntry(entry, input, skip, detail));
     controls.append(title, label, input, actions, detail);
     row.append(image, controls);
     return row;
