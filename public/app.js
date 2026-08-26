@@ -1,8 +1,8 @@
 import { buildCsv, canConfirmSerial, canCopySerial, chooseCandidates, isValidSerial, normalizeSerial } from './serial.js';
 import { snapshotSelectedImages } from './photo-files.js';
-import { ORIENTATIONS, applyGlyphResolutions, chooseUniqueCandidates, hasExactLocatorSerial, locatorCrops } from './recognition.js';
+import { ORIENTATIONS, chooseUniqueCandidates, glyphResolutionConflicts, hasTrustedCandidate, locatorCrops, shouldScanLocatorCrops } from './recognition.js';
 
-export const APP_VERSION = '0.3.1';
+export const APP_VERSION = '0.3.2';
 
 const OCR_START_TIMEOUT_MS = 30000;
 const SERIAL_WHITELIST = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -412,17 +412,17 @@ async function processItem(item) {
       setProgress(`Locating serial lines in photo ${batchIndex} of ${state.items.length}`, (orientationIndex / ORIENTATIONS.length) * 100, `${rotation}° orientation`);
       const oriented = drawOriented(image, rotation);
       const crops = locatorCrops(await scanPass(worker, oriented), oriented.width, oriented.height);
-      if (!hasExactLocatorSerial(crops)) {
+      if (!shouldScanLocatorCrops(crops)) {
         oriented.width = 1;
         oriented.height = 1;
         continue;
       }
+      const orientationCandidates = [];
       for (let cropIndex = 0; cropIndex < crops.length; cropIndex += 1) {
         const definition = crops[cropIndex];
         const glyphResolutions = isValidSerial(definition.locatorText)
           ? await resolveAmbiguousGlyphs(worker, oriented, definition.ambiguousGlyphs)
           : [];
-        const ambiguityNeedsReview = glyphResolutions.some((resolution) => !resolution.value);
         const crop = cropCanvas(oriented, definition);
         const variants = buildVariants(crop);
         const passes = [];
@@ -430,38 +430,40 @@ async function processItem(item) {
           setProgress(`Confirming serial lines in photo ${batchIndex} of ${state.items.length}`, ((orientationIndex + ((cropIndex + (variantIndex / variants.length)) / Math.max(crops.length, 1))) / ORIENTATIONS.length) * 100, `${rotation}° · candidate ${cropIndex + 1}/${crops.length}`);
           passes.push(await scanSerialCrop(worker, variants[variantIndex]));
         }
-        const resolvedPasses = passes.map((pass) => pass.map((read) => ({
-          ...read,
-          text: applyGlyphResolutions(read.text, glyphResolutions),
-        })));
-        const cropCandidates = chooseCandidates(resolvedPasses).map((candidate) => ({
-          ...candidate,
-          trusted: candidate.trusted && !ambiguityNeedsReview,
-          ambiguityNeedsReview,
-        }));
-        const resolvedLocatorText = applyGlyphResolutions(definition.locatorText, glyphResolutions);
-        if (isValidSerial(resolvedLocatorText)) {
+        const cropCandidates = chooseCandidates(passes).map((candidate) => {
+          const ambiguityNeedsReview = glyphResolutions.some((resolution) => !resolution.value)
+            || glyphResolutionConflicts(candidate.code, glyphResolutions);
+          return {
+            ...candidate,
+            trusted: candidate.trusted && !ambiguityNeedsReview,
+            ambiguityNeedsReview,
+          };
+        });
+        if (isValidSerial(definition.locatorText)) {
           cropCandidates.push({
-            code: resolvedLocatorText,
+            code: definition.locatorText,
             confidence: definition.locatorConfidence,
             agreement: 1,
             passes: variants.length,
             trusted: false,
-            ambiguityNeedsReview,
+            ambiguityNeedsReview: glyphResolutions.some((resolution) => !resolution.value)
+              || glyphResolutionConflicts(definition.locatorText, glyphResolutions),
           });
         }
         for (const candidate of cropCandidates) {
-          candidates.push({
+          const preparedCandidate = {
             ...candidate,
             cropUrl: candidate.trusted ? '' : await canvasObjectUrl(crop),
-          });
+          };
+          candidates.push(preparedCandidate);
+          orientationCandidates.push(preparedCandidate);
         }
         crop.width = 1;
         crop.height = 1;
       }
       oriented.width = 1;
       oriented.height = 1;
-      break;
+      if (hasTrustedCandidate(orientationCandidates)) break;
     }
     const uniqueCandidates = chooseUniqueCandidates(candidates);
     const selected = new Set(uniqueCandidates);

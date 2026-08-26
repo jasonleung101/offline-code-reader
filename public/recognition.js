@@ -55,19 +55,19 @@ export function locatorCrops(lines, width, height) {
     .filter((crop) => crop.width > 0 && crop.height > 0);
 }
 
-export function hasExactLocatorSerial(crops) {
-  return (crops ?? []).some((crop) => /^[A-Z0-9]{16}$/.test(crop.locatorText));
+// The locator is deliberately permissive: crop OCR is the accuracy-critical
+// pass, so a missing or mistaken locator character must not prevent a rescan.
+export function shouldScanLocatorCrops(crops) {
+  return (crops ?? []).length > 0;
 }
 
-export function applyGlyphResolutions(code, resolutions) {
-  const characters = String(code).split('');
-  for (const resolution of resolutions ?? []) {
-    if ((characters[resolution.index] === '2' || characters[resolution.index] === 'Z')
-      && (resolution.value === '2' || resolution.value === 'Z')) {
-      characters[resolution.index] = resolution.value;
-    }
-  }
-  return characters.join('');
+export function hasTrustedCandidate(candidates) {
+  return (candidates ?? []).some((candidate) => candidate.trusted);
+}
+
+export function glyphResolutionConflicts(code, resolutions) {
+  return (resolutions ?? []).some((resolution) => resolution.value
+    && String(code)[resolution.index] !== resolution.value);
 }
 
 export function chooseUniqueCandidates(candidates) {

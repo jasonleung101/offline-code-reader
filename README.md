@@ -46,7 +46,7 @@ Then open `http://localhost:8080`. The service worker works only on `localhost` 
 
 The fixed 16-character format helps substantially, but OCR cannot safely promise that every blurred, skewed, or partially obscured photo is correct. This project avoids silent errors by requiring agreement across repeated full-page scans plus a confidence threshold before it marks a code `Ready` — each code is judged independently, so one weak code never blocks its neighbours. Anything less is deliberately kept in a review state.
 
-A full-resolution sparse-text pass locates codes anywhere in the photo. The app tries rotations only as a fallback, then rescans each serial-line crop with grayscale and locally thresholded variants. It also independently rechecks `2` and `Z` glyphs; a disagreement leaves the result in review instead of silently changing it.
+A full-resolution sparse-text pass locates plausible serial lines anywhere in the photo, even when that first read is incomplete. The app rescans each candidate crop with grayscale and locally thresholded variants before accepting a complete code. It tries rotations only when the current orientation has no confirmed code. It also independently rechecks `2` and `Z` glyphs; any disagreement leaves the result in review instead of silently changing it.
 
 The supplied sample is correctly isolated to its serial-panel crop; the basic offline Tesseract model flags its ambiguous result for review rather than claiming an incorrect automatic result. A custom character model trained on a representative set of your real photos is the next step if you need reliably hands-free, near-100% recognition.
 
