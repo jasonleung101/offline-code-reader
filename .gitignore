@@ -1,2 +1,6 @@
-node_modules/
+.orca/
+.planning/
 .DS_Store
+node_modules/
+private-serial-training-set.json
+training-ground-truth/

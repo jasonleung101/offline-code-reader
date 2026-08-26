@@ -54,6 +54,14 @@ The supplied sample is correctly isolated to its serial-panel crop; the basic of
 
 The public site does not collect or export training data. To create your own private set from local photos, run a local static server from the repository root and open [tools/training-set-builder.html](tools/training-set-builder.html). Rotate photos before its single OCR pass, type each complete 16-character serial, then download the self-contained JSON. It contains serial-panel crops and labels only. Train your model separately; once you provide the trained data file, it can be bundled into the public scanner for every visitor without accepting any visitor data.
 
+Convert that JSON into Tesseract-compatible PNG and transcription pairs locally:
+
+```sh
+node scripts/convert-training-set.mjs private-serial-training-set.json training-ground-truth
+```
+
+This creates `serial-0001.png` beside `serial-0001.gt.txt` for each labeled crop. Both the downloaded dataset and generated directory are ignored by Git.
+
 ## Third-party notices
 
 The vendored OCR runtime uses Tesseract.js, Tesseract.js Core, and English data from `@tesseract.js-data/eng`. Licenses are included in `public/vendor/licenses/`.
