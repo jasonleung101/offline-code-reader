@@ -5,10 +5,12 @@ import { normalizeSerial } from '../public/serial.js';
 
 const imagePath = process.argv[2];
 const psm = process.argv[3] || '11';
-if (!imagePath) throw new Error('Usage: node scripts/ocr-smoke.mjs <image-path> [psm]');
+const language = process.argv[4] || 'eng';
+const langPath = process.argv[5] || path.resolve('node_modules/@tesseract.js-data/eng/4.0.0_best_int');
+if (!imagePath) throw new Error('Usage: node scripts/ocr-smoke.mjs <image-path> [psm] [language] [lang-path]');
 
-const worker = await createWorker('eng', 1, {
-  langPath: path.resolve('node_modules/@tesseract.js-data/eng/4.0.0_best_int'),
+const worker = await createWorker(language, 1, {
+  langPath,
   cacheMethod: 'none',
   gzip: true,
 });

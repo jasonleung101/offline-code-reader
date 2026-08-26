@@ -2,11 +2,15 @@ import { applyEndingHint, buildCsv, canConfirmSerial, canCopySerial, chooseCandi
 import { snapshotSelectedImages } from './photo-files.js';
 import { chooseUniqueCandidates, glyphResolutionConflicts, glyphResolutionNeedsReview, locatorCrops, shouldScanLocatorCrops } from './recognition.js';
 
-export const APP_VERSION = '0.4.0';
+export const APP_VERSION = '0.4.1';
 
 const OCR_START_TIMEOUT_MS = 30000;
 const SERIAL_WHITELIST = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-const state = { items: [], workerPromise: null, queue: Promise.resolve(), endingHint: '', scanning: false };
+const LOCATOR_MODEL_LANGUAGE = 'eng';
+const SERIAL_MODEL_LANGUAGE = 'serial_k2';
+const state = {
+  items: [], locatorWorkerPromise: null, serialWorkerPromise: null, queue: Promise.resolve(), endingHint: '', scanning: false,
+};
 
 const dom = {
   photoInput: document.querySelector('#photo-input'),
@@ -275,51 +279,14 @@ function buildVariants(source) {
   const grayscale = cloneCanvas(source);
   const context = grayscale.getContext('2d', { willReadFrequently: true });
   const pixels = context.getImageData(0, 0, grayscale.width, grayscale.height);
-  const values = [];
   for (let index = 0; index < pixels.data.length; index += 4) {
     const brightness = Math.round((pixels.data[index] * 0.299) + (pixels.data[index + 1] * 0.587) + (pixels.data[index + 2] * 0.114));
-    values.push(brightness);
     pixels.data[index] = brightness;
     pixels.data[index + 1] = brightness;
     pixels.data[index + 2] = brightness;
   }
   context.putImageData(pixels, 0, 0);
-
-  const thresholded = cloneCanvas(grayscale);
-  const thresholdContext = thresholded.getContext('2d', { willReadFrequently: true });
-  const thresholdPixels = thresholdContext.getImageData(0, 0, thresholded.width, thresholded.height);
-  const width = thresholded.width;
-  const height = thresholded.height;
-  const integral = new Uint32Array((width + 1) * (height + 1));
-  for (let y = 1; y <= height; y += 1) {
-    let rowSum = 0;
-    for (let x = 1; x <= width; x += 1) {
-      rowSum += values[((y - 1) * width) + x - 1];
-      integral[(y * (width + 1)) + x] = integral[((y - 1) * (width + 1)) + x] + rowSum;
-    }
-  }
-  const radius = Math.max(12, Math.round(Math.min(width, height) / 18));
-  for (let index = 0; index < thresholdPixels.data.length; index += 4) {
-    const pixelIndex = index / 4;
-    const x = pixelIndex % width;
-    const y = Math.floor(pixelIndex / width);
-    const x0 = Math.max(0, x - radius);
-    const y0 = Math.max(0, y - radius);
-    const x1 = Math.min(width - 1, x + radius);
-    const y1 = Math.min(height - 1, y + radius);
-    const integralWidth = width + 1;
-    const total = integral[((y1 + 1) * integralWidth) + x1 + 1]
-      - integral[(y0 * integralWidth) + x1 + 1]
-      - integral[((y1 + 1) * integralWidth) + x0]
-      + integral[(y0 * integralWidth) + x0];
-    const average = total / ((x1 - x0 + 1) * (y1 - y0 + 1));
-    const value = values[pixelIndex] < average * 0.86 ? 0 : 255;
-    thresholdPixels.data[index] = value;
-    thresholdPixels.data[index + 1] = value;
-    thresholdPixels.data[index + 2] = value;
-  }
-  thresholdContext.putImageData(thresholdPixels, 0, 0);
-  return [source, grayscale, thresholded];
+  return [source, grayscale];
 }
 
 function withTimeout(promise, timeoutMs, message) {
@@ -330,9 +297,9 @@ function withTimeout(promise, timeoutMs, message) {
   return Promise.race([promise, timeout]).finally(() => window.clearTimeout(timeoutId));
 }
 
-async function getWorker() {
-  if (!state.workerPromise) {
-    const workerStartup = window.Tesseract.createWorker('eng', 1, {
+async function getWorker(workerPromiseKey, language, initialPsm) {
+  if (!state[workerPromiseKey]) {
+    const workerStartup = window.Tesseract.createWorker(language, 1, {
       workerPath: './vendor/tesseract/worker.min.js',
       corePath: './vendor/tesseract-core',
       langPath: './vendor/lang-data',
@@ -347,20 +314,28 @@ async function getWorker() {
         tessedit_char_whitelist: SERIAL_WHITELIST,
         preserve_interword_spaces: '0',
         user_defined_dpi: '300',
-        tessedit_pageseg_mode: '11',
+        tessedit_pageseg_mode: initialPsm,
       });
       return worker;
     });
-    state.workerPromise = withTimeout(
+    state[workerPromiseKey] = withTimeout(
       workerStartup,
       OCR_START_TIMEOUT_MS,
       `OCR startup timed out after ${Math.round(OCR_START_TIMEOUT_MS / 1000)} seconds. Reload the app and try again.`,
     ).catch((error) => {
-      state.workerPromise = null;
+      state[workerPromiseKey] = null;
       throw new Error(`Offline OCR could not start: ${error.message || error}`);
     });
   }
-  return state.workerPromise;
+  return state[workerPromiseKey];
+}
+
+function getLocatorWorker() {
+  return getWorker('locatorWorkerPromise', LOCATOR_MODEL_LANGUAGE, '11');
+}
+
+function getSerialWorker() {
+  return getWorker('serialWorkerPromise', SERIAL_MODEL_LANGUAGE, '13');
 }
 
 async function scanPass(worker, canvas) {
@@ -370,7 +345,7 @@ async function scanPass(worker, canvas) {
 }
 
 async function scanSerialCrop(worker, canvas) {
-  await worker.setParameters({ tessedit_char_whitelist: SERIAL_WHITELIST, tessedit_pageseg_mode: '7' });
+  await worker.setParameters({ tessedit_char_whitelist: SERIAL_WHITELIST, tessedit_pageseg_mode: '13' });
   const result = await worker.recognize(canvas, {}, { text: true });
   const code = normalizeSerial(result.data.text);
   return isValidSerial(code) ? [{ text: code, confidence: Math.round(result.data.confidence) }] : [];
@@ -434,26 +409,27 @@ async function processItem(item) {
   render();
   try {
     const image = await imageFromFile(item.file);
-    const worker = await getWorker();
+    const locatorWorker = await getLocatorWorker();
     const batchIndex = state.items.indexOf(item) + 1;
     const candidates = [];
     const rotation = item.rotation || 0;
     const endingHint = state.endingHint;
     setProgress(`Locating serial lines in photo ${batchIndex} of ${state.items.length}`, 0, rotation ? `${rotation}° manual orientation` : 'image orientation');
     const oriented = drawOriented(image, rotation);
-    const crops = locatorCrops(await scanPass(worker, oriented), oriented.width, oriented.height);
+    const crops = locatorCrops(await scanPass(locatorWorker, oriented), oriented.width, oriented.height);
     if (shouldScanLocatorCrops(crops)) {
+      const serialWorker = await getSerialWorker();
       for (let cropIndex = 0; cropIndex < crops.length; cropIndex += 1) {
         const definition = crops[cropIndex];
         const glyphResolutions = isValidSerial(definition.locatorText)
-          ? await resolveAmbiguousGlyphs(worker, oriented, definition.ambiguousGlyphs)
+          ? await resolveAmbiguousGlyphs(serialWorker, oriented, definition.ambiguousGlyphs)
           : [];
         const crop = cropCanvas(oriented, definition);
         const variants = buildVariants(crop);
         const passes = [];
         for (let variantIndex = 0; variantIndex < variants.length; variantIndex += 1) {
           setProgress(`Confirming serial lines in photo ${batchIndex} of ${state.items.length}`, ((cropIndex + (variantIndex / variants.length)) / Math.max(crops.length, 1)) * 100, `${rotation}° · candidate ${cropIndex + 1}/${crops.length}`);
-          passes.push(await scanSerialCrop(worker, variants[variantIndex]));
+          passes.push(await scanSerialCrop(serialWorker, variants[variantIndex]));
         }
         const hintedPasses = passes.map((pass) => pass.map((read) => ({
           ...read,

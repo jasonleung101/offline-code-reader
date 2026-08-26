@@ -5,7 +5,7 @@ A static, mobile-first PWA that reads 16-character printed serial codes — one 
 ## Privacy and offline behavior
 
 - No application API, analytics, telemetry, image upload, or third-party CDN is used.
-- OCR JavaScript, WebAssembly, and English data are vendored under `public/vendor/`.
+- OCR JavaScript, WebAssembly, English locator data, and the bundled K2-specific serial model are vendored under `public/vendor/`.
 - On the first GitHub Pages visit, the service worker caches the full app. After cache installation it starts and processes photos offline.
 - Photos and results remain in memory for the active batch. `Clear batch` releases them; a CSV is only created when the user explicitly exports one.
 
@@ -46,9 +46,9 @@ Then open `http://localhost:8080`. The service worker works only on `localhost` 
 
 The fixed 16-character format helps substantially, but OCR cannot safely promise that every blurred, skewed, or partially obscured photo is correct. This project avoids silent errors by requiring agreement across repeated full-page scans plus a confidence threshold before it marks a code `Ready` — each code is judged independently, so one weak code never blocks its neighbours. Anything less is deliberately kept in a review state.
 
-A full-resolution sparse-text pass locates plausible serial lines anywhere in the photo, even when that first read is incomplete. Each automatic scan uses only the decoded image orientation; a person can explicitly rotate a sideways photo and start a separate rescan. The app rescans each candidate crop with grayscale and locally thresholded variants before accepting a complete code. An optional, user-provided one- or two-character ending hint replaces only those known final characters; all preceding characters must still agree across OCR passes. It also independently rechecks `2` and `Z` glyphs outside that supplied ending; any disagreement leaves the result in review instead of silently changing it.
+A full-resolution sparse-text pass locates plausible serial lines anywhere in the photo, even when that first read is incomplete. Each automatic scan uses only the decoded image orientation; a person can explicitly rotate a sideways photo and start a separate rescan. The app rescans each candidate crop at its original resolution and in full-resolution grayscale before accepting a complete code. An optional, user-provided one- or two-character ending hint replaces only those known final characters; all preceding characters must still agree across OCR passes. It also independently rechecks `2` and `Z` glyphs outside that supplied ending; any disagreement leaves the result in review instead of silently changing it.
 
-The supplied sample is correctly isolated to its serial-panel crop; the basic offline Tesseract model flags its ambiguous result for review rather than claiming an incorrect automatic result. A custom character model trained on a representative set of your real photos is the next step if you need reliably hands-free, near-100% recognition.
+The app locates candidate serial lines with the stock English OCR model, then reads each serial crop with the bundled K2-specific model. It was fine-tuned only with the owner's private K2-ending serial labels, so it should be used for that K2-ending format rather than as a general serial model.
 
 ## Owner-only training data
 

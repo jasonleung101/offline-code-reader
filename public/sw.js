@@ -1,8 +1,8 @@
 // Bump this name whenever any pre-cached application asset changes.
-const CACHE_NAME = 'offline-code-reader-v12';
+const CACHE_NAME = 'offline-code-reader-v13';
 const APP_FILES = [
   './', './index.html', './styles.css', './app.js', './serial.js', './recognition.js', './photo-files.js', './manifest.webmanifest', './icon.svg',
-  './vendor/tesseract/tesseract.min.js', './vendor/tesseract/worker.min.js', './vendor/lang-data/eng.traineddata.gz',
+  './vendor/tesseract/tesseract.min.js', './vendor/tesseract/worker.min.js', './vendor/lang-data/eng.traineddata.gz', './vendor/lang-data/serial_k2.traineddata.gz',
   './vendor/tesseract-core/tesseract-core.wasm', './vendor/tesseract-core/tesseract-core.wasm.js',
   './vendor/tesseract-core/tesseract-core-simd.wasm', './vendor/tesseract-core/tesseract-core-simd.wasm.js',
   './vendor/tesseract-core/tesseract-core-lstm.wasm', './vendor/tesseract-core/tesseract-core-lstm.wasm.js',
