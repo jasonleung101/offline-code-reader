@@ -1,4 +1,6 @@
-export const ORIENTATIONS = [0, 90, 270, 180];
+// Automatic OCR performs exactly one scan in the image decoder's orientation.
+// Any rotation is an explicit user action before a separate rescan.
+export const ORIENTATIONS = [0];
 export const LOCATOR_MIN_LENGTH = 12;
 export const LOCATOR_MAX_LENGTH = 20;
 
@@ -61,13 +63,17 @@ export function shouldScanLocatorCrops(crops) {
   return (crops ?? []).length > 0;
 }
 
-export function hasTrustedCandidate(candidates) {
-  return (candidates ?? []).some((candidate) => candidate.trusted);
+export function glyphResolutionConflicts(code, resolutions, endingHintLength = 0) {
+  const protectedStart = Math.max(0, String(code).length - endingHintLength);
+  return (resolutions ?? []).some((resolution) => resolution.value
+    && resolution.index < protectedStart
+    && String(code)[resolution.index] !== resolution.value);
 }
 
-export function glyphResolutionConflicts(code, resolutions) {
-  return (resolutions ?? []).some((resolution) => resolution.value
-    && String(code)[resolution.index] !== resolution.value);
+export function glyphResolutionNeedsReview(code, resolutions, endingHintLength = 0) {
+  const protectedStart = Math.max(0, String(code).length - endingHintLength);
+  return (resolutions ?? []).some((resolution) => resolution.index < protectedStart
+    && (!resolution.value || String(code)[resolution.index] !== resolution.value));
 }
 
 export function chooseUniqueCandidates(candidates) {

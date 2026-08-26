@@ -6,8 +6,19 @@ export function normalizeSerial(text = '') {
     .replace(/[^A-Z0-9]/g, '');
 }
 
+export function normalizeEndingHint(text = '') {
+  return normalizeSerial(text).slice(-2);
+}
+
 export function isValidSerial(value) {
   return SERIAL_PATTERN.test(value);
+}
+
+export function applyEndingHint(code, endingHint = '') {
+  const normalizedCode = normalizeSerial(code);
+  const normalizedHint = normalizeEndingHint(endingHint);
+  if (!normalizedHint || !isValidSerial(normalizedCode)) return normalizedCode;
+  return `${normalizedCode.slice(0, -normalizedHint.length)}${normalizedHint}`;
 }
 
 export function extractSerials(text = '') {

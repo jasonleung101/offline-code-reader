@@ -15,7 +15,7 @@ The app needs access to its own local assets on first use, so it must be loaded 
 
 1. Open the hosted page and wait for the status chip to say `offline cache ready`.
 2. Optionally install it from the browser's **Add to Home Screen** / **Install app** action.
-3. Select or capture photos. Each photo is scanned at its original resolution; the natural orientation is used first, with rotation attempted only if no serial is found. Serial-line crops receive extra confirmation passes.
+3. Optionally enter one or two known final characters (for example `2` or `K2`) before selecting photos. Each photo is scanned once at its original resolution in its decoded orientation. If a photo is visibly sideways, use **Rotate 90° and re-scan**; that starts one new scan in the orientation you chose. Serial-line crops receive extra confirmation passes.
 4. `Ready` means every executed scan pass agreed at high confidence. `Needs review` means that code will not be trusted or exported until you inspect/edit it into a valid 16-character code.
 5. Copy trusted codes or export a CSV (one row per code, with its index within the photo).
 
@@ -46,7 +46,7 @@ Then open `http://localhost:8080`. The service worker works only on `localhost` 
 
 The fixed 16-character format helps substantially, but OCR cannot safely promise that every blurred, skewed, or partially obscured photo is correct. This project avoids silent errors by requiring agreement across repeated full-page scans plus a confidence threshold before it marks a code `Ready` — each code is judged independently, so one weak code never blocks its neighbours. Anything less is deliberately kept in a review state.
 
-A full-resolution sparse-text pass locates plausible serial lines anywhere in the photo, even when that first read is incomplete. The app rescans each candidate crop with grayscale and locally thresholded variants before accepting a complete code. It tries rotations only when the current orientation has no confirmed code. It also independently rechecks `2` and `Z` glyphs; any disagreement leaves the result in review instead of silently changing it.
+A full-resolution sparse-text pass locates plausible serial lines anywhere in the photo, even when that first read is incomplete. Each automatic scan uses only the decoded image orientation; a person can explicitly rotate a sideways photo and start a separate rescan. The app rescans each candidate crop with grayscale and locally thresholded variants before accepting a complete code. An optional, user-provided one- or two-character ending hint replaces only those known final characters; all preceding characters must still agree across OCR passes. It also independently rechecks `2` and `Z` glyphs outside that supplied ending; any disagreement leaves the result in review instead of silently changing it.
 
 The supplied sample is correctly isolated to its serial-panel crop; the basic offline Tesseract model flags its ambiguous result for review rather than claiming an incorrect automatic result. A custom character model trained on a representative set of your real photos is the next step if you need reliably hands-free, near-100% recognition.
 

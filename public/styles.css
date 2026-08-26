@@ -40,6 +40,10 @@ h2 { margin-bottom: 7px; font-size: 1.18rem; letter-spacing: -.02em; }
 .primary-button:hover { background: var(--blue-dark); }
 .primary-button input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
 .hint { grid-column: 1 / -1; font-size: .82rem; }
+.ending-hint-field { display: grid; grid-template-columns: auto minmax(88px, 120px); gap: 7px 10px; align-items: center; }
+.ending-hint-field label { font-size: .86rem; font-weight: 750; }.ending-hint-field label span { color: var(--ink-soft); font-weight: 600; }
+.ending-hint-field input { min-height: 44px; padding: 8px 10px; border: 1px solid #b9c4d2; border-radius: 9px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 800; letter-spacing: .08em; text-align: center; text-transform: uppercase; }
+.ending-hint-field p { grid-column: 1 / -1; font-size: .76rem; }
 
 .progress-section { margin-top: 18px; padding: 15px 18px; }
 .progress-label { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 9px; font-size: .88rem; font-weight: 700; }
@@ -82,6 +86,7 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 @media (max-width: 600px) {
   .masthead { display: block; }.privacy-chip { display: inline-flex; margin-top: 16px; }
   .upload-card { grid-template-columns: 1fr; }.upload-card .primary-button { width: 100%; }
+  .ending-hint-field { grid-template-columns: 1fr minmax(88px, 120px); }
   .section-heading { align-items: start; flex-direction: column; }.action-row { justify-content: start; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; } }

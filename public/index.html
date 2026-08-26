@@ -27,6 +27,11 @@
           <h2 id="add-photos-title">Add code photos</h2>
           <p>Photos can contain one or more 16-character serial codes, anywhere in the frame. QR codes are ignored.</p>
         </div>
+        <div class="ending-hint-field">
+          <label for="ending-hint">Known ending <span>(optional)</span></label>
+          <input id="ending-hint" type="text" inputmode="text" maxlength="2" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="2 or K2" aria-describedby="ending-hint-help">
+          <p id="ending-hint-help">Set one or two known final characters before scanning. Change it, then re-scan existing photos.</p>
+        </div>
         <label class="primary-button" for="photo-input">
           <span>Select photos</span>
           <input id="photo-input" type="file" accept="image/*" multiple>

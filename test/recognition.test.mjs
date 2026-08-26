@@ -1,14 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { LOCATOR_MAX_LENGTH, LOCATOR_MIN_LENGTH, ORIENTATIONS, chooseUniqueCandidates, glyphResolutionConflicts, hasTrustedCandidate, isPlausibleLocatorLine, locatorCrops, shouldScanLocatorCrops } from '../public/recognition.js';
+import { LOCATOR_MAX_LENGTH, LOCATOR_MIN_LENGTH, ORIENTATIONS, chooseUniqueCandidates, glyphResolutionConflicts, glyphResolutionNeedsReview, isPlausibleLocatorLine, locatorCrops, shouldScanLocatorCrops } from '../public/recognition.js';
 
 const serialLine = {
   text: 'F4MU6RD6P6V7NMK2',
   bbox: { x0: 100, y0: 200, x1: 500, y1: 250 },
 };
 
-test('checks the original orientation before rotation fallbacks', () => {
-  assert.deepEqual(ORIENTATIONS, [0, 90, 270, 180]);
+test('limits automatic scans to the decoded image orientation', () => {
+  assert.deepEqual(ORIENTATIONS, [0]);
 });
 
 test('keeps plausible serial lines without presuming a suffix or QR payload', () => {
@@ -29,12 +29,6 @@ test('rescans a plausible partial locator instead of discarding a recoverable se
   assert.equal(partialCrop[0].locatorText.length, 15);
   assert.equal(shouldScanLocatorCrops(partialCrop), true);
   assert.equal(shouldScanLocatorCrops([]), false);
-});
-
-test('only rotates when the current orientation has no trusted serial', () => {
-  assert.equal(hasTrustedCandidate([{ code: 'F4MU6RD6P6V7NMK2', trusted: true }]), true);
-  assert.equal(hasTrustedCandidate([{ code: 'F4MU6RD6P6V7NMK2', trusted: false }]), false);
-  assert.equal(hasTrustedCandidate([]), false);
 });
 
 test('retains exact 2 and Z glyph bounds for a focused recheck', () => {
@@ -58,6 +52,8 @@ test('keeps a serial in review when its crop and glyph recheck disagree', () => 
   assert.equal(glyphResolutionConflicts('F4MU6RD6P6V7NMK2', [{ index: 15, value: 'Z' }]), true);
   assert.equal(glyphResolutionConflicts('F4MU6RD6P6V7NMK2', [{ index: 15, value: '2' }]), false);
   assert.equal(glyphResolutionConflicts('F4MU6RD6P6V7NMK2', [{ index: 15, value: '' }]), false);
+  assert.equal(glyphResolutionConflicts('F4MU6RD6P6V7NMK2', [{ index: 15, value: 'Z' }], 1), false);
+  assert.equal(glyphResolutionNeedsReview('F4MU6RD6P6V7NMK2', [{ index: 15, value: '' }], 1), false);
 });
 
 test('deduplicates the same serial while retaining the safest reading', () => {

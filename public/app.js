@@ -1,15 +1,16 @@
-import { buildCsv, canConfirmSerial, canCopySerial, chooseCandidates, isValidSerial, normalizeSerial } from './serial.js';
+import { applyEndingHint, buildCsv, canConfirmSerial, canCopySerial, chooseCandidates, isValidSerial, normalizeEndingHint, normalizeSerial } from './serial.js';
 import { snapshotSelectedImages } from './photo-files.js';
-import { ORIENTATIONS, chooseUniqueCandidates, glyphResolutionConflicts, hasTrustedCandidate, locatorCrops, shouldScanLocatorCrops } from './recognition.js';
+import { chooseUniqueCandidates, glyphResolutionConflicts, glyphResolutionNeedsReview, locatorCrops, shouldScanLocatorCrops } from './recognition.js';
 
-export const APP_VERSION = '0.3.2';
+export const APP_VERSION = '0.3.3';
 
 const OCR_START_TIMEOUT_MS = 30000;
 const SERIAL_WHITELIST = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-const state = { items: [], workerPromise: null, queue: Promise.resolve() };
+const state = { items: [], workerPromise: null, queue: Promise.resolve(), endingHint: '' };
 
 const dom = {
   photoInput: document.querySelector('#photo-input'),
+  endingHint: document.querySelector('#ending-hint'),
   status: document.querySelector('#connection-status'),
   version: document.querySelector('#app-version'),
   progressSection: document.querySelector('#progress-section'),
@@ -186,6 +187,15 @@ function renderItem(item) {
     state.queue = state.queue.then(() => processItem(item)).then(clearProgress);
   });
   actions.append(retry);
+  const rotate = document.createElement('button');
+  rotate.type = 'button';
+  rotate.className = 'secondary-button';
+  rotate.textContent = 'Rotate 90° and re-scan';
+  rotate.addEventListener('click', () => {
+    item.rotation = ((item.rotation || 0) + 90) % 360;
+    state.queue = state.queue.then(() => processItem(item)).then(clearProgress);
+  });
+  actions.append(rotate);
   main.append(actions);
 
   row.append(main);
@@ -407,17 +417,12 @@ async function processItem(item) {
     const worker = await getWorker();
     const batchIndex = state.items.indexOf(item) + 1;
     const candidates = [];
-    for (let orientationIndex = 0; orientationIndex < ORIENTATIONS.length; orientationIndex += 1) {
-      const rotation = ORIENTATIONS[orientationIndex];
-      setProgress(`Locating serial lines in photo ${batchIndex} of ${state.items.length}`, (orientationIndex / ORIENTATIONS.length) * 100, `${rotation}° orientation`);
-      const oriented = drawOriented(image, rotation);
-      const crops = locatorCrops(await scanPass(worker, oriented), oriented.width, oriented.height);
-      if (!shouldScanLocatorCrops(crops)) {
-        oriented.width = 1;
-        oriented.height = 1;
-        continue;
-      }
-      const orientationCandidates = [];
+    const rotation = item.rotation || 0;
+    const endingHint = state.endingHint;
+    setProgress(`Locating serial lines in photo ${batchIndex} of ${state.items.length}`, 0, rotation ? `${rotation}° manual orientation` : 'image orientation');
+    const oriented = drawOriented(image, rotation);
+    const crops = locatorCrops(await scanPass(worker, oriented), oriented.width, oriented.height);
+    if (shouldScanLocatorCrops(crops)) {
       for (let cropIndex = 0; cropIndex < crops.length; cropIndex += 1) {
         const definition = crops[cropIndex];
         const glyphResolutions = isValidSerial(definition.locatorText)
@@ -427,27 +432,32 @@ async function processItem(item) {
         const variants = buildVariants(crop);
         const passes = [];
         for (let variantIndex = 0; variantIndex < variants.length; variantIndex += 1) {
-          setProgress(`Confirming serial lines in photo ${batchIndex} of ${state.items.length}`, ((orientationIndex + ((cropIndex + (variantIndex / variants.length)) / Math.max(crops.length, 1))) / ORIENTATIONS.length) * 100, `${rotation}° · candidate ${cropIndex + 1}/${crops.length}`);
+          setProgress(`Confirming serial lines in photo ${batchIndex} of ${state.items.length}`, ((cropIndex + (variantIndex / variants.length)) / Math.max(crops.length, 1)) * 100, `${rotation}° · candidate ${cropIndex + 1}/${crops.length}`);
           passes.push(await scanSerialCrop(worker, variants[variantIndex]));
         }
-        const cropCandidates = chooseCandidates(passes).map((candidate) => {
-          const ambiguityNeedsReview = glyphResolutions.some((resolution) => !resolution.value)
-            || glyphResolutionConflicts(candidate.code, glyphResolutions);
+        const hintedPasses = passes.map((pass) => pass.map((read) => ({
+          ...read,
+          text: applyEndingHint(read.text, endingHint),
+        })));
+        const cropCandidates = chooseCandidates(hintedPasses).map((candidate) => {
+          const ambiguityNeedsReview = glyphResolutionNeedsReview(candidate.code, glyphResolutions, endingHint.length)
+            || glyphResolutionConflicts(candidate.code, glyphResolutions, endingHint.length);
           return {
             ...candidate,
             trusted: candidate.trusted && !ambiguityNeedsReview,
             ambiguityNeedsReview,
           };
         });
-        if (isValidSerial(definition.locatorText)) {
+        const hintedLocatorText = applyEndingHint(definition.locatorText, endingHint);
+        if (isValidSerial(hintedLocatorText)) {
           cropCandidates.push({
-            code: definition.locatorText,
+            code: hintedLocatorText,
             confidence: definition.locatorConfidence,
             agreement: 1,
             passes: variants.length,
             trusted: false,
-            ambiguityNeedsReview: glyphResolutions.some((resolution) => !resolution.value)
-              || glyphResolutionConflicts(definition.locatorText, glyphResolutions),
+            ambiguityNeedsReview: glyphResolutionNeedsReview(hintedLocatorText, glyphResolutions, endingHint.length)
+              || glyphResolutionConflicts(hintedLocatorText, glyphResolutions, endingHint.length),
           });
         }
         for (const candidate of cropCandidates) {
@@ -456,15 +466,13 @@ async function processItem(item) {
             cropUrl: candidate.trusted ? '' : await canvasObjectUrl(crop),
           };
           candidates.push(preparedCandidate);
-          orientationCandidates.push(preparedCandidate);
         }
         crop.width = 1;
         crop.height = 1;
       }
-      oriented.width = 1;
-      oriented.height = 1;
-      if (hasTrustedCandidate(orientationCandidates)) break;
     }
+    oriented.width = 1;
+    oriented.height = 1;
     const uniqueCandidates = chooseUniqueCandidates(candidates);
     const selected = new Set(uniqueCandidates);
     for (const candidate of candidates) {
@@ -497,6 +505,7 @@ async function addFiles(fileList) {
     codes: [],
     status: 'processing',
     error: '',
+    rotation: 0,
   }));
   state.items.push(...newItems);
   render();
@@ -551,6 +560,10 @@ dom.photoInput.addEventListener('change', (event) => {
   const files = snapshotSelectedImages(event.target.files);
   state.queue = state.queue.then(() => addFiles(files));
   event.target.value = '';
+});
+dom.endingHint.addEventListener('input', () => {
+  state.endingHint = normalizeEndingHint(dom.endingHint.value);
+  dom.endingHint.value = state.endingHint;
 });
 dom.copy.addEventListener('click', copyCodes);
 dom.export.addEventListener('click', downloadCsv);

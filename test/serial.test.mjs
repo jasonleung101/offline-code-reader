@@ -1,11 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildCsv, canConfirmSerial, canCopySerial, chooseCandidates, extractSerials, isValidSerial, normalizeSerial } from '../public/serial.js';
+import { applyEndingHint, buildCsv, canConfirmSerial, canCopySerial, chooseCandidates, extractSerials, isValidSerial, normalizeEndingHint, normalizeSerial } from '../public/serial.js';
 
 test('normalizes OCR whitespace and punctuation without altering valid characters', () => {
   assert.equal(normalizeSerial(' F4MU6R\nD6P6V7NMK2 '), 'F4MU6RD6P6V7NMK2');
   assert.equal(isValidSerial('F4MU6RD6P6V7NMK2'), true);
   assert.equal(isValidSerial('F4MU6RD6P6V7NMK'), false);
+});
+
+test('uses an optional one or two character ending hint without changing the preceding serial', () => {
+  assert.equal(normalizeEndingHint(' k2 '), 'K2');
+  assert.equal(normalizeEndingHint('a-k2'), 'K2');
+  assert.equal(applyEndingHint('F4MU6RD6P6V7NMKZ', '2'), 'F4MU6RD6P6V7NMK2');
+  assert.equal(applyEndingHint('F4MU6RD6P6V7NMZZ', 'K2'), 'F4MU6RD6P6V7NMK2');
+  assert.equal(applyEndingHint('F4MU6RD6P6V7NMK2', ''), 'F4MU6RD6P6V7NMK2');
+  assert.equal(applyEndingHint('TOO-SHORT', 'K2'), 'TOOSHORT');
 });
 
 test('extracts every exact 16-character token from arbitrary page text', () => {

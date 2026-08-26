@@ -1,5 +1,5 @@
 // Bump this name whenever any pre-cached application asset changes.
-const CACHE_NAME = 'offline-code-reader-v10';
+const CACHE_NAME = 'offline-code-reader-v11';
 const APP_FILES = [
   './', './index.html', './styles.css', './app.js', './serial.js', './recognition.js', './photo-files.js', './manifest.webmanifest', './icon.svg',
   './vendor/tesseract/tesseract.min.js', './vendor/tesseract/worker.min.js', './vendor/lang-data/eng.traineddata.gz',

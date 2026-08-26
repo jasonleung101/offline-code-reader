@@ -1,7 +1,7 @@
 {
   "name": "Offline Code Reader",
   "short_name": "Code Reader",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "On-device serial-code reader with no uploads.",
   "start_url": "./",
   "display": "standalone",
