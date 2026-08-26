@@ -39,6 +39,7 @@ h2 { margin-bottom: 7px; font-size: 1.18rem; letter-spacing: -.02em; }
 .primary-button { display: inline-flex; align-items: center; justify-content: center; padding: 10px 15px; color: #fff; background: var(--blue); }
 .primary-button:hover { background: var(--blue-dark); }
 .primary-button input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
+.upload-actions { display: flex; flex-wrap: wrap; justify-content: end; gap: 8px; }
 .hint { grid-column: 1 / -1; font-size: .82rem; }
 .ending-hint-field { display: grid; grid-template-columns: auto minmax(88px, 120px); gap: 7px 10px; align-items: center; }
 .ending-hint-field label { font-size: .86rem; font-weight: 750; }.ending-hint-field label span { color: var(--ink-soft); font-weight: 600; }
@@ -85,7 +86,7 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 
 @media (max-width: 600px) {
   .masthead { display: block; }.privacy-chip { display: inline-flex; margin-top: 16px; }
-  .upload-card { grid-template-columns: 1fr; }.upload-card .primary-button { width: 100%; }
+  .upload-card { grid-template-columns: 1fr; }.upload-card .primary-button, .upload-actions { width: 100%; }.upload-actions .secondary-button { flex: 1; }
   .ending-hint-field { grid-template-columns: 1fr minmax(88px, 120px); }
   .section-heading { align-items: start; flex-direction: column; }.action-row { justify-content: start; }
 }

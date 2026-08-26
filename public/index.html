@@ -32,11 +32,14 @@
           <input id="ending-hint" type="text" inputmode="text" maxlength="2" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="2 or K2" aria-describedby="ending-hint-help">
           <p id="ending-hint-help">Set one or two known final characters before scanning. Change it, then re-scan existing photos.</p>
         </div>
-        <label class="primary-button" for="photo-input">
-          <span>Select photos</span>
-          <input id="photo-input" type="file" accept="image/*" multiple>
-        </label>
-        <p class="hint">The first run downloads the OCR files once. Later use works offline.</p>
+        <div class="upload-actions">
+          <label class="primary-button" for="photo-input">
+            <span>Select photos</span>
+            <input id="photo-input" type="file" accept="image/*" multiple>
+          </label>
+          <button id="start-scan-button" class="secondary-button" type="button" disabled>Start scan</button>
+        </div>
+        <p class="hint">Rotate any sideways photo in the staged list, then choose Start scan. The first run downloads OCR files once; later use works offline.</p>
       </section>
 
       <section id="progress-section" class="progress-section" hidden aria-live="polite">

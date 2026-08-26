@@ -2,15 +2,16 @@ import { applyEndingHint, buildCsv, canConfirmSerial, canCopySerial, chooseCandi
 import { snapshotSelectedImages } from './photo-files.js';
 import { chooseUniqueCandidates, glyphResolutionConflicts, glyphResolutionNeedsReview, locatorCrops, shouldScanLocatorCrops } from './recognition.js';
 
-export const APP_VERSION = '0.3.3';
+export const APP_VERSION = '0.4.0';
 
 const OCR_START_TIMEOUT_MS = 30000;
 const SERIAL_WHITELIST = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-const state = { items: [], workerPromise: null, queue: Promise.resolve(), endingHint: '' };
+const state = { items: [], workerPromise: null, queue: Promise.resolve(), endingHint: '', scanning: false };
 
 const dom = {
   photoInput: document.querySelector('#photo-input'),
   endingHint: document.querySelector('#ending-hint'),
+  startScan: document.querySelector('#start-scan-button'),
   status: document.querySelector('#connection-status'),
   version: document.querySelector('#app-version'),
   progressSection: document.querySelector('#progress-section'),
@@ -49,6 +50,7 @@ function exportRows() {
 }
 
 function photoStatusLabel(item) {
+  if (item.status === 'staged') return 'Ready to scan';
   if (item.status === 'processing') return 'Reading';
   if (item.status === 'error') return 'Could not read';
   return `${item.codes.length} code${item.codes.length === 1 ? '' : 's'} found`;
@@ -71,6 +73,7 @@ function render() {
   dom.copy.disabled = rows.length === 0;
   dom.export.disabled = rows.length === 0;
   dom.clear.disabled = !hasItems;
+  dom.startScan.disabled = state.scanning || !state.items.some((item) => item.status === 'staged');
   dom.list.replaceChildren(...state.items.map(renderItem));
 }
 
@@ -157,7 +160,7 @@ function renderItem(item) {
   name.textContent = item.file.name;
   name.title = item.file.name;
   const status = document.createElement('span');
-  status.className = `status ${item.status === 'error' ? 'error' : 'ready'}`;
+  status.className = `status ${item.status === 'error' ? 'error' : item.status === 'staged' ? 'review' : 'ready'}`;
   status.textContent = photoStatusLabel(item);
   top.append(name, status);
 
@@ -179,23 +182,40 @@ function renderItem(item) {
 
   const actions = document.createElement('div');
   actions.className = 'result-actions';
-  const retry = document.createElement('button');
-  retry.type = 'button';
-  retry.className = 'secondary-button';
-  retry.textContent = item.status === 'error' && !item.codes.length ? 'Retry scan' : 'Re-scan photo';
-  retry.addEventListener('click', () => {
-    state.queue = state.queue.then(() => processItem(item)).then(clearProgress);
-  });
-  actions.append(retry);
-  const rotate = document.createElement('button');
-  rotate.type = 'button';
-  rotate.className = 'secondary-button';
-  rotate.textContent = 'Rotate 90° and re-scan';
-  rotate.addEventListener('click', () => {
-    item.rotation = ((item.rotation || 0) + 90) % 360;
-    state.queue = state.queue.then(() => processItem(item)).then(clearProgress);
-  });
-  actions.append(rotate);
+  if (item.status === 'staged') {
+    const orientation = document.createElement('span');
+    orientation.className = 'result-detail';
+    orientation.textContent = item.rotation ? `${item.rotation}° selected before scan` : 'Image orientation selected';
+    const rotate = document.createElement('button');
+    rotate.type = 'button';
+    rotate.className = 'secondary-button';
+    rotate.textContent = 'Rotate 90°';
+    rotate.disabled = state.scanning;
+    rotate.addEventListener('click', () => {
+      item.rotation = ((item.rotation || 0) + 90) % 360;
+      render();
+    });
+    actions.append(orientation, rotate);
+  } else {
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.className = 'secondary-button';
+    retry.textContent = item.status === 'error' && !item.codes.length ? 'Retry scan' : 'Re-scan photo';
+    retry.addEventListener('click', () => {
+      state.queue = state.queue.then(() => processItem(item)).then(clearProgress);
+    });
+    const changeOrientation = document.createElement('button');
+    changeOrientation.type = 'button';
+    changeOrientation.className = 'secondary-button';
+    changeOrientation.textContent = 'Change orientation';
+    changeOrientation.addEventListener('click', () => {
+      revokeCodePreviews(item);
+      item.codes = [];
+      item.status = 'staged';
+      render();
+    });
+    actions.append(retry, changeOrientation);
+  }
   main.append(actions);
 
   row.append(main);
@@ -503,13 +523,17 @@ async function addFiles(fileList) {
     file,
     previewUrl: URL.createObjectURL(file),
     codes: [],
-    status: 'processing',
+    status: 'staged',
     error: '',
     rotation: 0,
   }));
   state.items.push(...newItems);
   render();
-  for (const item of newItems) await processItem(item);
+}
+
+async function startStagedItems() {
+  const stagedItems = state.items.filter((item) => item.status === 'staged');
+  for (const item of stagedItems) await processItem(item);
   clearProgress();
 }
 
@@ -558,7 +582,7 @@ function updateConnectionStatus() {
 
 dom.photoInput.addEventListener('change', (event) => {
   const files = snapshotSelectedImages(event.target.files);
-  state.queue = state.queue.then(() => addFiles(files));
+  addFiles(files);
   event.target.value = '';
 });
 dom.endingHint.addEventListener('input', () => {
@@ -568,6 +592,18 @@ dom.endingHint.addEventListener('input', () => {
 dom.copy.addEventListener('click', copyCodes);
 dom.export.addEventListener('click', downloadCsv);
 dom.clear.addEventListener('click', clearBatch);
+dom.startScan.addEventListener('click', () => {
+  state.queue = state.queue.then(async () => {
+    state.scanning = true;
+    render();
+    try {
+      await startStagedItems();
+    } finally {
+      state.scanning = false;
+      render();
+    }
+  });
+});
 dom.version.textContent = `v${APP_VERSION}`;
 
 if ('serviceWorker' in navigator) {

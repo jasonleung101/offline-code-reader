@@ -15,7 +15,7 @@ The app needs access to its own local assets on first use, so it must be loaded 
 
 1. Open the hosted page and wait for the status chip to say `offline cache ready`.
 2. Optionally install it from the browser's **Add to Home Screen** / **Install app** action.
-3. Optionally enter one or two known final characters (for example `2` or `K2`) before selecting photos. Each photo is scanned once at its original resolution in its decoded orientation. If a photo is visibly sideways, use **Rotate 90° and re-scan**; that starts one new scan in the orientation you chose. Serial-line crops receive extra confirmation passes.
+3. Optionally enter one or two known final characters (for example `2` or `K2`) before selecting photos. Photos first enter a staging list: rotate a visibly sideways photo there, then choose **Start scan**. Each scan uses only that one selected orientation at the original resolution. Serial-line crops receive extra confirmation passes.
 4. `Ready` means every executed scan pass agreed at high confidence. `Needs review` means that code will not be trusted or exported until you inspect/edit it into a valid 16-character code.
 5. Copy trusted codes or export a CSV (one row per code, with its index within the photo).
 
@@ -49,6 +49,10 @@ The fixed 16-character format helps substantially, but OCR cannot safely promise
 A full-resolution sparse-text pass locates plausible serial lines anywhere in the photo, even when that first read is incomplete. Each automatic scan uses only the decoded image orientation; a person can explicitly rotate a sideways photo and start a separate rescan. The app rescans each candidate crop with grayscale and locally thresholded variants before accepting a complete code. An optional, user-provided one- or two-character ending hint replaces only those known final characters; all preceding characters must still agree across OCR passes. It also independently rechecks `2` and `Z` glyphs outside that supplied ending; any disagreement leaves the result in review instead of silently changing it.
 
 The supplied sample is correctly isolated to its serial-panel crop; the basic offline Tesseract model flags its ambiguous result for review rather than claiming an incorrect automatic result. A custom character model trained on a representative set of your real photos is the next step if you need reliably hands-free, near-100% recognition.
+
+## Owner-only training data
+
+The public site does not collect or export training data. To create your own private set from local photos, run a local static server from the repository root and open [tools/training-set-builder.html](tools/training-set-builder.html). Rotate photos before its single OCR pass, type each complete 16-character serial, then download the self-contained JSON. It contains serial-panel crops and labels only. Train your model separately; once you provide the trained data file, it can be bundled into the public scanner for every visitor without accepting any visitor data.
 
 ## Third-party notices
 

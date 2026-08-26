@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="description" content="Private local serial-crop annotation tool.">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self'; img-src 'self' blob: data:; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+    <link rel="stylesheet" href="../public/styles.css">
+    <link rel="stylesheet" href="./training-set-builder.css">
+    <title>Private Training Set Builder</title>
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="masthead">
+        <div>
+          <p class="eyebrow">OWNER-ONLY · LOCAL DATASET</p>
+          <h1>Training Set Builder</h1>
+          <p class="lede">Rotate your photos before one local scan, then label every serial crop. Nothing is uploaded.</p>
+        </div>
+        <output id="builder-status" class="privacy-chip" aria-live="polite">Private local tool</output>
+      </header>
+
+      <section class="upload-card" aria-labelledby="photos-title">
+        <div>
+          <h2 id="photos-title">1. Stage photos</h2>
+          <p>Rotate each image here if needed. Scanning begins only when you choose it.</p>
+        </div>
+        <label class="primary-button" for="training-photo-input">
+          <span>Add private photos</span>
+          <input id="training-photo-input" type="file" accept="image/*" multiple>
+        </label>
+        <p class="hint">The downloaded dataset includes panel crops and labels, never the full photos.</p>
+      </section>
+
+      <section id="staging-section" class="results-section" hidden aria-labelledby="staging-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">PRE-SCAN</p>
+            <h2 id="staging-title">Choose each photo orientation</h2>
+          </div>
+          <button id="start-scan-button" class="primary-button" type="button">Start scan</button>
+        </div>
+        <ol id="staging-list" class="results-list"></ol>
+      </section>
+
+      <section id="builder-progress" class="progress-section" hidden aria-live="polite">
+        <div class="progress-label"><span id="builder-progress-text">Preparing OCR…</span><span id="builder-progress-count"></span></div>
+        <div class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <div id="builder-progress-bar" class="progress-bar"></div>
+        </div>
+      </section>
+
+      <section id="annotation-section" class="results-section" hidden aria-labelledby="annotation-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">PRIVATE ANNOTATION</p>
+            <h2 id="annotation-title">Label every serial crop</h2>
+            <p id="annotation-summary" class="section-copy"></p>
+          </div>
+          <button id="download-dataset-button" class="secondary-button" type="button" disabled>Download training set</button>
+        </div>
+        <ol id="annotation-list" class="annotation-list" aria-live="polite"></ol>
+      </section>
+    </main>
+
+    <script src="../public/vendor/tesseract/tesseract.min.js"></script>
+    <script type="module" src="./training-set-builder.js"></script>
+  </body>
+</html>
